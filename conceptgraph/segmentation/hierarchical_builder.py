@@ -12,7 +12,8 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from .data_structures import (
     HierarchicalSceneGraph, SpatialUnit, FunctionalZone, ObjectInfo,
-    ObjectRegionRelation, SpatialInfo, TrajectoryEvidence, ZoneRelation, TaskAffordances
+    ObjectRegionRelation, SpatialInfo, TrajectoryEvidence, ZoneRelation, TaskAffordances,
+    EnhancedAffordance
 )
 from .enhanced_affordance import EnhancedAffordanceExtractor
 from .visibility_keyframe import VisibilityBasedKeyframeSelector, build_visibility_matrix
@@ -198,16 +199,40 @@ class HierarchicalSceneBuilder:
         self.object_affordances = []
         for i, obj in enumerate(self.objects):
             aff = self.pre_extracted_affordances.get(i, {})
-            self.object_affordances.append({
-                "object_id": i,
-                "tag": aff.get('object_tag', f'object_{i}'),
-                "category": aff.get('category', ''),
-                "primary_functions": aff.get('primary_functions', []),
-                "interaction_type": aff.get('interaction_type', 'other'),
-                "typical_location": aff.get('typical_location', ''),
-                "co_objects": aff.get('co_objects', []),
-                "usage_context": aff.get('usage_context', ''),
-            })
+            
+            # 获取位置
+            position = None
+            if 'pcd_np' in obj and len(obj['pcd_np']) > 0:
+                position = obj['pcd_np'].mean(axis=0).tolist()
+            elif 'bbox_np' in obj and len(obj['bbox_np']) > 0:
+                position = obj['bbox_np'].mean(axis=0).tolist()
+            
+            # 转换 primary_functions 为 EnhancedAffordance 列表
+            affordances = []
+            for func in aff.get('primary_functions', []):
+                affordances.append(EnhancedAffordance(
+                    action=func,
+                    context=aff.get('usage_context', ''),
+                    co_objects=aff.get('co_objects', [])
+                ))
+            
+            # 将 typical_location 转换为 typical_zones 格式
+            typical_location = aff.get('typical_location', '')
+            typical_zones = [f"{typical_location}_zone"] if typical_location else []
+            
+            # 创建 ObjectInfo 对象
+            obj_info = ObjectInfo(
+                object_id=i,
+                object_tag=aff.get('object_tag', f'object_{i}'),
+                relation_type=ObjectRegionRelation.SUPPORTING,
+                position=position,
+                affordances=affordances,
+                typical_zones=typical_zones,
+                importance_score=0.5,
+                reasoning=aff.get('usage_context', '')
+            )
+            self.object_affordances.append(obj_info)
+        
         print(f"  使用预提取的 {len(self.object_affordances)} 个物体Affordance")
     
     def _select_keyframes(self):

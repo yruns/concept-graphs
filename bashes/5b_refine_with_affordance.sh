@@ -35,7 +35,8 @@ export LLM_MODEL="gemini-3-flash-preview"
 
 # 场景设置
 SCENE_NAME=${1:-room0}
-IMAGE_NUM=${2:-4}  # 每个物体使用的图像数量，默认4
+IMAGE_NUM=${2:-4}  # 每个物体使用的图像数量，默认1
+MAX_WORKERS=${3:-10}  # 并行worker数量，默认20
 THRESHOLD=1.2
 CACHE_DIR="${REPLICA_ROOT}/${SCENE_NAME}/sg_cache_detect"
 PCD_FILE="${REPLICA_ROOT}/${SCENE_NAME}/pcd_saves/full_pcd_ram_withbg_allclasses_overlap_maskconf0.25_simsum${THRESHOLD}_dbscan.1_merge20_masksub_post.pkl.gz"
@@ -45,6 +46,7 @@ echo "步骤 5B+: 精炼描述 + Affordance提取（带图像）"
 echo "================================================"
 echo "场景: ${SCENE_NAME}"
 echo "每物体图像数: ${IMAGE_NUM}"
+echo "并行workers: ${MAX_WORKERS}"
 echo "LLM 服务器: ${LLM_BASE_URL}"
 echo "模型: ${LLM_MODEL}"
 echo ""
@@ -82,6 +84,7 @@ echo "python -m conceptgraph.segmentation.refine_with_affordance \
     --cache_dir \"${CACHE_DIR}\" \
     --pcd_file \"${PCD_FILE}\" \
     --image_num ${IMAGE_NUM} \
+    --max_workers ${MAX_WORKERS} \
     --output \"${CACHE_DIR}/object_affordances.json\""
 
 # 运行
@@ -89,6 +92,7 @@ python -m conceptgraph.segmentation.refine_with_affordance \
     --cache_dir "${CACHE_DIR}" \
     --pcd_file "${PCD_FILE}" \
     --image_num ${IMAGE_NUM} \
+    --max_workers ${MAX_WORKERS} \
     --output "${CACHE_DIR}/object_affordances.json"
 
 if [ $? -eq 0 ]; then

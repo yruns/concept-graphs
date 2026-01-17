@@ -25,6 +25,8 @@ from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # 添加项目路径
 import sys
@@ -158,10 +160,49 @@ def get_best_object_image(obj: Dict, max_images: int = 5) -> List[Image.Image]:
     return images
 
 
-def image_to_base64(image: Image.Image) -> str:
-    """将PIL图像转换为base64"""
+def resize_image_for_api(image: Image.Image, max_size: int = 800) -> Image.Image:
+    """Resize image to fit within max_size while maintaining aspect ratio
+    
+    Args:
+        image: PIL Image
+        max_size: Maximum dimension (width or height)
+    
+    Returns:
+        Resized PIL Image
+    """
+    width, height = image.size
+    
+    # Only resize if larger than max_size
+    if max(width, height) <= max_size:
+        return image
+    
+    # Calculate new dimensions
+    if width > height:
+        new_width = max_size
+        new_height = int(height * max_size / width)
+    else:
+        new_height = max_size
+        new_width = int(width * max_size / height)
+    
+    return image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+
+def image_to_base64(image: Image.Image, max_size: int = 800) -> str:
+    """Convert PIL image to base64, resizing if necessary
+    
+    Args:
+        image: PIL Image
+        max_size: Maximum dimension for resizing
+    
+    Returns:
+        Base64 encoded string
+    """
+    # Resize image to reduce token usage
+    resized = resize_image_for_api(image, max_size)
+    
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    # Use JPEG for smaller file size
+    resized.save(buffer, format="JPEG", quality=85)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
@@ -185,12 +226,12 @@ def build_message_with_image(captions: List[str], images: List[Image.Image],
     
     content = [{"type": "text", "text": prompt}]
     
-    # Add images (limited by max_images)
+    # Add images (limited by max_images, resized to reduce tokens)
     for img in images[:max_images]:
-        img_b64 = image_to_base64(img)
+        img_b64 = image_to_base64(img, max_size=800)  # Resize to max 800px
         content.append({
             "type": "image_url",
-            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}
         })
     
     return [{"role": "user", "content": content}]
@@ -220,8 +261,9 @@ def parse_response(response_text: str) -> Dict:
 
 
 def process_object(obj_id: int, captions: List[str], images: List[Image.Image],
-                   base_url: str, model: str, max_images: int = 3) -> Dict:
-    """Process a single object with LLM
+                   base_url: str, model: str, max_images: int = 3,
+                   max_retries: int = 3, retry_delay: float = 2.0) -> Dict:
+    """Process a single object with LLM (with retry mechanism)
     
     Args:
         obj_id: Object ID
@@ -230,27 +272,42 @@ def process_object(obj_id: int, captions: List[str], images: List[Image.Image],
         base_url: LLM service URL
         model: Model name
         max_images: Maximum number of images to use
+        max_retries: Maximum number of retry attempts
+        retry_delay: Delay between retries in seconds
     """
+    import time
+    
     messages = build_message_with_image(captions, images, max_images=max_images)
     
-    try:
-        response = chat_completions(
-            messages=messages,
-            base_url=base_url,
-            model=model,
-            max_tokens=1000,
-            timeout=180
-        )
-        
-        content = response["choices"][0]["message"]["content"]
-        result = parse_response(content)
-        
-        if result:
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            response = chat_completions(
+                messages=messages,
+                base_url=base_url,
+                model=model,
+                max_tokens=4000,  # Increased for longer responses
+                timeout=180
+            )
+            
+            content = response["choices"][0]["message"]["content"]
+            result = parse_response(content)
+            if not result:
+                raise ValueError(f"Empty or invalid JSON response for object {obj_id}, response: {response}")
+
             result["id"] = obj_id
             result["raw_response"] = content
             return result
-    except Exception as e:
-        print(f"  物体{obj_id}处理失败: {e}")
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                # Exponential backoff
+                wait_time = retry_delay * (2 ** attempt)
+                time.sleep(wait_time)
+            continue
+    
+    # All retries failed
+    print(f"  Object {obj_id} failed after {max_retries} retries: {last_error}")
     
     # Fallback structure on failure
     return {
@@ -275,10 +332,12 @@ def main():
     parser.add_argument("--pcd_file", type=str, default=None, help="PCD file path (for object images)")
     parser.add_argument("--output", type=str, default=None, help="Output file path")
     parser.add_argument("--image_num", type=int, default=3, help="Number of images to use per object (default: 3)")
+    parser.add_argument("--max_workers", type=int, default=10, help="Number of parallel workers (default: 10)")
     args = parser.parse_args()
     
     cache_dir = Path(args.cache_dir)
     image_num = args.image_num
+    max_workers = args.max_workers
     
     # Get environment variables
     base_url = os.getenv("LLM_BASE_URL")
@@ -292,6 +351,7 @@ def main():
     print(f"LLM Service: {base_url}")
     print(f"Model: {model}")
     print(f"Images per object: {image_num}")
+    print(f"Parallel workers: {max_workers}")
     
     # Load captions
     captions_file = cache_dir / "cfslam_llava_captions.json"
@@ -301,7 +361,8 @@ def main():
     with open(captions_file) as f:
         captions_data = json.load(f)
     
-    print(f"Object count: {len(captions_data)}")
+    total = len(captions_data)
+    print(f"Object count: {total}")
     
     # Load pcd file for object image data
     objects = []
@@ -314,9 +375,12 @@ def main():
     else:
         print("No PCD file provided, running without images")
     
-    # Process each object
-    results = []
-    for item in tqdm(captions_data, desc="Processing objects"):
+    # Thread-safe counter and lock for printing
+    completed_count = [0]  # Use list for mutable in closure
+    print_lock = threading.Lock()
+    
+    def process_single_object(item):
+        """Process a single object (for parallel execution)"""
         obj_id = item["id"]
         captions = item.get("captions", [])
         
@@ -326,7 +390,43 @@ def main():
             images = get_best_object_image(objects[obj_id], max_images=image_num)
         
         result = process_object(obj_id, captions, images, base_url, model, max_images=image_num)
-        results.append(result)
+        
+        # Thread-safe print
+        with print_lock:
+            completed_count[0] += 1
+            status = "✓" if not result.get("error") else "✗"
+            tag = result.get("object_tag", "N/A")
+            category = result.get("category", "N/A")
+            summary = result.get("summary", "")[:60]
+            print(f"[{completed_count[0]}/{total}] {status} Object {obj_id}: {tag} ({category})")
+            print(f"         {summary}...")
+        
+        return result
+    
+    # Process objects in parallel
+    print(f"\nProcessing {total} objects with {max_workers} workers...\n")
+    results = []
+    
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Submit all tasks
+        future_to_item = {executor.submit(process_single_object, item): item for item in captions_data}
+        
+        # Collect results as they complete
+        for future in as_completed(future_to_item):
+            try:
+                result = future.result()
+                results.append(result)
+            except Exception as e:
+                item = future_to_item[future]
+                print(f"Error processing object {item['id']}: {e}")
+                results.append({
+                    "id": item["id"],
+                    "object_tag": f"object_{item['id']}",
+                    "error": True
+                })
+    
+    # Sort results by object ID
+    results.sort(key=lambda x: x.get("id", 0))
     
     # 保存结果
     output_path = Path(args.output) if args.output else cache_dir / "object_affordances.json"
