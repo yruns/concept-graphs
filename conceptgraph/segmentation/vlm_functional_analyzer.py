@@ -86,7 +86,7 @@ class VLMFunctionalAnalyzer:
             base_url: VLM服务地址，默认从环境变量LLM_BASE_URL读取
         """
         self.vlm_client = vlm_client
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
     
     def analyze_single_frame(
         self,

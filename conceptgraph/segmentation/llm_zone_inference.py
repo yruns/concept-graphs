@@ -84,7 +84,7 @@ class LLMZoneInference:
         Args:
             base_url: LLM服务地址，默认从环境变量LLM_BASE_URL读取
         """
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
     
     def run_inference(
         self,
@@ -156,18 +156,20 @@ class LLMZoneInference:
     ) -> ZoneInferenceResult:
         """
         Step 1: 基于视频和物体组合推理功能区域
+        LLM调用失败会直接抛出异常
         """
         prompt = self._build_zone_inference_prompt(
             video_analysis, object_combos, trajectory_behavior
         )
         
-        try:
-            response = self._call_llm(prompt)
-            return self._parse_zone_response(response)
-        except Exception as e:
-            print(f"Step 1 失败: {e}")
-            # Fallback: 基于VLM分析创建基本区域
-            return self._fallback_zone_inference(video_analysis, object_combos)
+        response = self._call_llm(prompt)
+        result = self._parse_zone_response(response)
+        
+        # 如果LLM解析结果为空，报错退出
+        if not result.zones:
+            raise ValueError("LLM区域推理失败: 返回的功能区域列表为空。请检查LLM服务状态和响应格式。")
+        
+        return result
     
     def step2_assign_objects(
         self,
@@ -177,16 +179,23 @@ class LLMZoneInference:
     ) -> ObjectAssignmentResult:
         """
         Step 2: 将物体分配到功能区域
+        LLM调用失败会直接抛出异常
         """
         prompt = self._build_assignment_prompt(zones, object_affordances, object_positions)
         
-        try:
-            response = self._call_llm(prompt)
-            return self._parse_assignment_response(response)
-        except Exception as e:
-            print(f"Step 2 失败: {e}")
-            # Fallback: 基于typical_zones分配
-            return self._fallback_object_assignment(zones, object_affordances)
+        response = self._call_llm(prompt)
+        result = self._parse_assignment_response(response)
+        
+        # 如果LLM解析结果为空或分配数量过少，报错退出
+        assigned_count = len(result.assignments)
+        total_count = len(object_affordances)
+        if assigned_count < total_count * 0.3:
+            raise ValueError(
+                f"LLM物体分配失败: 仅分配了 {assigned_count}/{total_count} 个物体 "
+                f"(不足30%)。请检查LLM服务状态和响应格式。"
+            )
+        
+        return result
     
     def step3_validate_and_refine(
         self,
@@ -196,17 +205,14 @@ class LLMZoneInference:
     ) -> ValidationResult:
         """
         Step 3: 验证分配结果，处理冲突
+        LLM调用失败会直接抛出异常
         """
         prompt = self._build_validation_prompt(
             zones_result, assignments_result, evidence_summary
         )
         
-        try:
-            response = self._call_llm(prompt)
-            return self._parse_validation_response(response)
-        except Exception as e:
-            print(f"Step 3 失败: {e}")
-            return ValidationResult(passed=True, final_confidence=0.7)
+        response = self._call_llm(prompt)
+        return self._parse_validation_response(response)
     
     def _build_zone_inference_prompt(
         self,
@@ -412,13 +418,21 @@ class LLMZoneInference:
     
     def _parse_assignment_response(self, response: str) -> ObjectAssignmentResult:
         """解析物体分配响应"""
+        # 调试: 打印原始响应
+        print(f"    [DEBUG] LLM响应长度: {len(response)} 字符")
+        print(f"    [DEBUG] 响应前500字符: {response[:500]}")
+        
         json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
         if json_match:
             response = json_match.group(1)
+            print(f"    [DEBUG] 提取JSON后长度: {len(response)}")
         
         try:
             data = json.loads(response)
-        except json.JSONDecodeError:
+            assignments = data.get("object_assignments", [])
+            print(f"    [DEBUG] 解析成功, object_assignments数量: {len(assignments)}")
+        except json.JSONDecodeError as e:
+            print(f"    [DEBUG] JSON解析失败: {e}")
             return ObjectAssignmentResult(assignments=[])
         
         return ObjectAssignmentResult(
@@ -504,14 +518,13 @@ class LLMZoneInference:
         return "\n".join(lines) if lines else "无区域数据"
     
     def _format_object_affordances(self, objects: List[ObjectInfo]) -> str:
-        """格式化物体affordance"""
+        """格式化物体affordance (处理所有物体)"""
         lines = []
-        for obj in objects[:30]:
-            actions = [a.action for a in obj.affordances]
-            lines.append(f"- ID {obj.object_id}: {obj.object_tag}")
-            lines.append(f"  affordances: {actions}")
-            lines.append(f"  typical_zones: {obj.typical_zones}")
-            lines.append(f"  importance: {obj.importance_score:.2f}")
+        # 处理所有物体，但使用简洁格式避免超出token限制
+        for obj in objects:
+            actions = [a.action for a in obj.affordances[:3]]  # 最多3个动作
+            zones = obj.typical_zones[:2] if obj.typical_zones else []
+            lines.append(f"- [{obj.object_id}] {obj.object_tag}: {actions}, zones={zones}")
         return "\n".join(lines) if lines else "无物体数据"
     
     def _format_positions(
@@ -519,12 +532,12 @@ class LLMZoneInference:
         objects: List[ObjectInfo], 
         positions: Dict[int, List[float]]
     ) -> str:
-        """格式化位置信息"""
+        """格式化位置信息 (处理所有物体)"""
         lines = []
-        for obj in objects[:20]:
+        for obj in objects:
             pos = positions.get(obj.object_id) or obj.position
             if pos:
-                lines.append(f"- {obj.object_tag}: [{pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f}]")
+                lines.append(f"- [{obj.object_id}] {obj.object_tag}: ({pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f})")
         return "\n".join(lines) if lines else "无位置数据"
     
     def _summarize_evidence(
@@ -555,77 +568,6 @@ class LLMZoneInference:
         # 实际实现可以根据refinements进行修正
         return zones_result, assignments_result
     
-    def _fallback_zone_inference(
-        self,
-        video_analysis: List[FrameAnalysis],
-        object_combos: List[Dict]
-    ) -> ZoneInferenceResult:
-        """Fallback区域推理"""
-        zones = []
-        seen_zones = set()
-        
-        # 从VLM分析中提取区域
-        for fa in video_analysis:
-            for g in fa.functional_groups:
-                zone_name = g.group_name
-                if zone_name not in seen_zones:
-                    seen_zones.add(zone_name)
-                    zones.append(FunctionalZone(
-                        zone_id=f"fz_{len(zones)}",
-                        zone_name=zone_name,
-                        parent_unit="su_0",
-                        primary_activity=g.primary_function,
-                        supported_activities=g.supported_activities,
-                        confidence=g.confidence
-                    ))
-        
-        # 从物体typical_zones中补充
-        for combo in object_combos:
-            for tz in combo.get("typical_zones", []):
-                if tz not in seen_zones:
-                    seen_zones.add(tz)
-                    zones.append(FunctionalZone(
-                        zone_id=f"fz_{len(zones)}",
-                        zone_name=tz,
-                        parent_unit="su_0",
-                        primary_activity=tz.replace("_zone", "").replace("_", " "),
-                        confidence=0.6
-                    ))
-        
-        return ZoneInferenceResult(zones=zones, reasoning="Fallback推理")
-    
-    def _fallback_object_assignment(
-        self,
-        zones: List[FunctionalZone],
-        object_affordances: List[ObjectInfo]
-    ) -> ObjectAssignmentResult:
-        """Fallback物体分配"""
-        assignments = []
-        zone_map = {z.zone_name: z.zone_id for z in zones}
-        
-        for obj in object_affordances:
-            assigned_zone = None
-            relation = "supporting"
-            
-            # 根据typical_zones分配
-            for tz in obj.typical_zones:
-                if tz in zone_map:
-                    assigned_zone = zone_map[tz]
-                    if obj.importance_score > 0.8:
-                        relation = "defining"
-                    break
-            
-            if assigned_zone:
-                assignments.append({
-                    "object_id": obj.object_id,
-                    "object_tag": obj.object_tag,
-                    "assigned_zone": assigned_zone,
-                    "relation_type": relation,
-                    "confidence": 0.6,
-                    "reasoning": "基于typical_zones分配"
-                })
-        
-        return ObjectAssignmentResult(assignments=assignments)
 
 
 if __name__ == "__main__":

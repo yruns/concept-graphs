@@ -17,9 +17,11 @@ def _read_file_to_b64(path: str) -> str:
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode("ascii")
 
-def _normalize_content(content: Union[str, List[Dict[str, Any]]]) -> Union[str, List[Dict[str, Any]]]:
+def _normalize_content(content: Union[str, List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    """将content统一转换为数组格式 [{"type": "text", "text": "..."}]"""
     if isinstance(content, str):
-        return content
+        # 将字符串转换为数组格式，兼容要求数组格式的LLM服务
+        return [{"type": "text", "text": content}]
     out: List[Dict[str, Any]] = []
     for item in content or []:
         t = item.get("type")
@@ -61,7 +63,7 @@ def chat_completions(
 ) -> Union[Dict[str, Any], Iterable[bytes]]:
     norm = [{"role": m.get("role"), "content": _normalize_content(m.get("content"))} for m in messages]
     payload: Dict[str, Any] = {
-        "model": model or "gpt-4o-2024-08-06",
+        "model": model,
         "messages": norm,
         "temperature": temperature,
         "max_tokens": max_tokens,

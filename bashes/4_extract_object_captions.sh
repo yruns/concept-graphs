@@ -31,7 +31,7 @@ cd /home/shyue/codebase/concept-graphs/conceptgraph
 source /home/shyue/codebase/concept-graphs/env_vars.bash
 
 # 配置统一LLM客户端
-export LLM_BASE_URL="http://10.21.231.7:8000"
+export LLM_BASE_URL="http://10.21.231.7:8005"
 export LLM_MODEL="gpt-4o-2024-08-06"
 export NUM_WORKERS=4
 

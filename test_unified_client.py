@@ -16,7 +16,7 @@ def test_text_client():
     
     from conceptgraph.llava.unified_client import chat_completions
     
-    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
     model = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
     
     print(f"服务器: {base_url}")
@@ -126,7 +126,7 @@ def test_multimodal_with_path():
         temp_path = f.name
         test_image.save(temp_path)
     
-    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
     model = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
     
     try:
@@ -175,7 +175,7 @@ def main():
     print()
     
     # 检查环境变量
-    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
     model = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
     
     print("配置:")

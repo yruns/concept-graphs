@@ -33,7 +33,7 @@ class HierarchicalSceneBuilder:
         self.visibility_radius = visibility_radius
         self.use_vlm = use_vlm
         self.use_llm = use_llm
-        self.llm_base_url = llm_base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+        self.llm_base_url = llm_base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
         
         self.poses = None
         self.objects = None

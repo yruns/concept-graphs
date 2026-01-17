@@ -33,7 +33,7 @@ if [ -f "../env_vars.bash" ]; then
 fi
 
 # 设置LLM服务地址 (如果未设置则使用默认值)
-export LLM_BASE_URL="${LLM_BASE_URL:-http://10.21.231.7:8000}"
+export LLM_BASE_URL="${LLM_BASE_URL:-http://10.21.231.7:8005}"
 
 # 默认参数
 SCENE_NAME="${1:-room0}"
@@ -44,7 +44,7 @@ N_KEYFRAMES=15
 USE_VLM="true"
 USE_LLM="true"
 # 从环境变量读取LLM地址，默认为项目配置的地址
-LLM_URL="${LLM_BASE_URL:-http://10.21.231.7:8000}"
+LLM_URL="${LLM_BASE_URL:-http://10.21.231.7:8005}"
 
 shift || true
 while [[ $# -gt 0 ]]; do

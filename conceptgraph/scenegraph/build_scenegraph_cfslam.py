@@ -517,7 +517,7 @@ def refine_node_captions(args):
         curr_chat_messages.append({"role": "user", "content": preds})
         
         # 使用统一客户端
-        base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+        base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
         model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
         chat_completion = chat_completions(
             messages=curr_chat_messages,
@@ -802,7 +802,7 @@ def build_scenegraph(args):
                     start_time = time.time()
                     
                     # 使用统一客户端
-                    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8000")
+                    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
                     model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
                     chat_completion = chat_completions(
                         messages=[{"role": "user", "content": DEFAULT_PROMPT + "\n\n" + input_json_str}],
