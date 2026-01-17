@@ -44,38 +44,6 @@ N_KEYFRAMES=15
 # 解析选项
 USE_VLM="true"
 USE_LLM="true"
-# 从环境变量读取LLM地址，默认为项目配置的地址
-LLM_URL="${LLM_BASE_URL}"
-
-shift || true
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --no_vlm)
-            USE_VLM="false"
-            shift
-            ;;
-        --no_llm)
-            USE_LLM="false"
-            shift
-            ;;
-        --stride)
-            STRIDE="$2"
-            shift 2
-            ;;
-        --n_keyframes)
-            N_KEYFRAMES="$2"
-            shift 2
-            ;;
-        --llm_url)
-            LLM_URL="$2"
-            shift 2
-            ;;
-        *)
-            echo "未知选项: $1"
-            exit 1
-            ;;
-    esac
-done
 
 # 数据集路径
 REPLICA_ROOT="${REPLICA_ROOT:-/path/to/replica}"
@@ -90,7 +58,7 @@ echo "场景路径: ${SCENE_PATH}"
 echo "输出目录: ${OUTPUT_DIR}"
 echo "使用VLM: ${USE_VLM}"
 echo "使用LLM: ${USE_LLM}"
-echo "LLM服务: ${LLM_URL}"
+echo "LLM服务: ${LLM_BASE_URL}"
 echo "============================================================"
 
 # 检查场景路径
@@ -114,7 +82,7 @@ PYTHON_CMD="python -m conceptgraph.segmentation.hierarchical_builder"
 PYTHON_CMD="${PYTHON_CMD} --scene_path ${SCENE_PATH}"
 PYTHON_CMD="${PYTHON_CMD} --output ${OUTPUT_DIR}/hierarchical_scene_graph.json"
 PYTHON_CMD="${PYTHON_CMD} --stride ${STRIDE}"
-PYTHON_CMD="${PYTHON_CMD} --llm_url ${LLM_URL}"
+PYTHON_CMD="${PYTHON_CMD} --llm_url ${LLM_BASE_URL}"
 
 if [ "${USE_VLM}" = "false" ]; then
     PYTHON_CMD="${PYTHON_CMD} --no_vlm"
