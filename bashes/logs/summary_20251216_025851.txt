@@ -1,0 +1,42 @@
+批量场景图生成摘要报告
+================================================================================
+
+执行时间: 2025年 12月 16日 星期二 06:19:46 CST
+总耗时: 12055 秒 (200 分钟)
+
+场景统计:
+  - 总数: 7
+  - 成功: 0
+  - 失败: 7
+  - 成功率: 0.0%
+
+处理的场景:
+  - room1
+  - room2
+  - office0
+  - office1
+  - office2
+  - office3
+  - office4
+
+失败的场景:
+  - room1
+  - room2
+  - office0
+  - office1
+  - office2
+  - office3
+  - office4
+
+输出文件位置:
+  各场景的可视化输出位于:
+  /home/shyue/Datasets/Replica/Replica/{scene_name}/visualization/
+  
+  包含:
+    - images/     : 多视角PNG图像
+    - ply/        : 3D模型文件
+    - html/       : 交互式HTML可视化
+
+日志文件位置: /home/shyue/codebase/concept-graphs/bashes/logs
+
+================================================================================

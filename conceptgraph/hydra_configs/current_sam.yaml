@@ -1,0 +1,5 @@
+sam_variant: mobile_sam  # Using mobile_sam for faster inference
+sam_encoder_version: "vit_h"
+# These paths will be set up automatically when models are downloaded
+sam_checkpoint_path: ./sam_vit_h_4b8939.pth
+mobile_sam_path: ./mobile_sam.pt

@@ -1,0 +1,9 @@
+defaults:
+  - base_detections
+  - current_setup
+  - current_sam
+  - _self_
+
+stride: 50
+exp_suffix: _current_setup_test
+save_video: true

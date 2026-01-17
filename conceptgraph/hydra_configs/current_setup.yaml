@@ -1,0 +1,3 @@
+dataset_root: /home/shyue/Datasets/Replica/Replica
+dataset_config: /home/shyue/codebase/concept-graphs/conceptgraph/dataset/dataconfigs/replica/replica.yaml
+scene_id: room0
