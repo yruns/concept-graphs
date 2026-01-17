@@ -517,8 +517,10 @@ def refine_node_captions(args):
         curr_chat_messages.append({"role": "user", "content": preds})
         
         # 使用统一客户端
-        base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
-        model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
+        base_url = os.getenv("LLM_BASE_URL")
+        model_name = os.getenv("LLM_MODEL")
+        if not base_url or not model_name:
+            raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
         chat_completion = chat_completions(
             messages=curr_chat_messages,
             model=model_name,
@@ -802,8 +804,10 @@ def build_scenegraph(args):
                     start_time = time.time()
                     
                     # 使用统一客户端
-                    base_url = os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
-                    model_name = os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
+                    base_url = os.getenv("LLM_BASE_URL")
+                    model_name = os.getenv("LLM_MODEL")
+                    if not base_url or not model_name:
+                        raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
                     chat_completion = chat_completions(
                         messages=[{"role": "user", "content": DEFAULT_PROMPT + "\n\n" + input_json_str}],
                         model=model_name,

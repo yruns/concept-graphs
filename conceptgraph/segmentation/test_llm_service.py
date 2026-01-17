@@ -60,6 +60,7 @@ def test_llm_service(base_url: str, verbose: bool = True) -> bool:
         start_time = time.time()
         response = chat_completions(
             messages=[{"role": "user", "content": test_prompt}],
+            model="gemini-3-flash-preview",
             base_url=base_url,
             max_tokens=50
         )
@@ -87,6 +88,7 @@ def test_llm_service(base_url: str, verbose: bool = True) -> bool:
         start_time = time.time()
         response = chat_completions(
             messages=[{"role": "user", "content": json_prompt}],
+            model="gemini-3-flash-preview",
             base_url=base_url,
             max_tokens=100
         )
@@ -137,6 +139,7 @@ def test_llm_service(base_url: str, verbose: bool = True) -> bool:
         start_time = time.time()
         response = chat_completions(
             messages=[{"role": "user", "content": zone_prompt}],
+            model="gemini-3-flash-preview",
             base_url=base_url,
             max_tokens=500
         )
@@ -186,7 +189,7 @@ def main():
     args = parser.parse_args()
     
     # 确定服务地址
-    base_url = args.url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
+    base_url = args.url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8006")
     
     # 运行测试
     success = test_llm_service(base_url, verbose=args.verbose)

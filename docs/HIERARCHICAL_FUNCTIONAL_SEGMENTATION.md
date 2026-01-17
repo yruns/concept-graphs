@@ -606,14 +606,14 @@ python -m conceptgraph.segmentation.hierarchical_builder \
     --scene_path /path/to/Replica/room0 \
     --output /path/to/output/hierarchical_scene_graph.json \
     --stride 5 \
-    --llm_url http://10.21.231.7:8005
+    --llm_url http://10.21.231.7:8006
 ```
 
 ### 环境变量
 
 ```bash
 # 设置LLM服务地址 (推荐)
-export LLM_BASE_URL="http://10.21.231.7:8005"
+export LLM_BASE_URL="http://10.21.231.7:8006"
 
 # 设置数据集根目录
 export REPLICA_ROOT="/home/user/Datasets/Replica/Replica"

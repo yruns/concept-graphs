@@ -86,7 +86,7 @@ class VLMFunctionalAnalyzer:
             base_url: VLM服务地址，默认从环境变量LLM_BASE_URL读取
         """
         self.vlm_client = vlm_client
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
+        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8006")
     
     def analyze_single_frame(
         self,
@@ -265,8 +265,12 @@ class VLMFunctionalAnalyzer:
             ]
         }]
         
+        model_name = os.getenv("LLM_MODEL")
+        if not model_name:
+            raise ValueError("环境变量 LLM_MODEL 必须显式设置，例如: export LLM_MODEL=gemini-3-flash-preview")
         response = chat_completions(
             messages=messages,
+            model=model_name,
             temperature=0.3,
             max_tokens=1500,
             base_url=self.base_url,
@@ -285,8 +289,12 @@ class VLMFunctionalAnalyzer:
         
         messages = [{"role": "user", "content": content}]
         
+        model_name = os.getenv("LLM_MODEL")
+        if not model_name:
+            raise ValueError("环境变量 LLM_MODEL 必须显式设置，例如: export LLM_MODEL=gemini-3-flash-preview")
         response = chat_completions(
             messages=messages,
+            model=model_name,
             temperature=0.3,
             max_tokens=2000,
             base_url=self.base_url,

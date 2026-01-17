@@ -61,6 +61,8 @@ def chat_completions(
     logid: Optional[str] = None,
     timeout: float = 60.0,
 ) -> Union[Dict[str, Any], Iterable[bytes]]:
+    assert model is not None, "model is required"
+
     norm = [{"role": m.get("role"), "content": _normalize_content(m.get("content"))} for m in messages]
     payload: Dict[str, Any] = {
         "model": model,

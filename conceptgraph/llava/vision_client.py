@@ -21,8 +21,10 @@ class UnifiedVisionChat:
             model_name: 模型名称(如果不提供,从环境变量读取)
             base_url: 服务器URL(如果不提供,从环境变量读取)
         """
-        self.model_name = model_name or os.getenv("LLM_MODEL", "gpt-4o-2024-08-06")
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
+        self.model_name = model_name or os.getenv("LLM_MODEL")
+        self.base_url = base_url or os.getenv("LLM_BASE_URL")
+        if not self.model_name or not self.base_url:
+            raise ValueError("必须设置环境变量 LLM_MODEL 和 LLM_BASE_URL，或通过参数传入")
         print(f"统一视觉客户端初始化: {self.model_name} @ {self.base_url}")
     
     def reset(self):

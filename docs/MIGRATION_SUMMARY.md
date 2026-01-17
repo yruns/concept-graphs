@@ -64,7 +64,7 @@ export USE_OLLAMA_VISION="true"
 export OLLAMA_VISION_MODEL="llama3.2-vision:latest"
 
 # 新的
-export LLM_BASE_URL="http://10.21.231.7:8005"
+export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gpt-4o-2024-08-06"
 ```
 - 移除Ollama服务检查
@@ -78,7 +78,7 @@ export USE_OLLAMA_GPT="true"
 export OLLAMA_GPT_MODEL="llama3.1:8b"
 
 # 新的
-export LLM_BASE_URL="http://10.21.231.7:8005"
+export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gpt-4o-2024-08-06"
 ```
 - 统一配置方式
@@ -101,7 +101,7 @@ export LLM_MODEL="gpt-4o-2024-08-06"
 
 ### 新增
 ```bash
-export LLM_BASE_URL="http://10.21.231.7:8005"  # 必需
+export LLM_BASE_URL="http://10.21.231.7:8006"  # 必需
 export LLM_MODEL="gpt-4o-2024-08-06"           # 可选,有默认值
 ```
 
@@ -142,7 +142,7 @@ LLAVA_CKPT_PATH  # 视觉客户端不再需要
 cd /home/shyue/codebase/concept-graphs
 
 # 设置环境变量
-export LLM_BASE_URL="http://10.21.231.7:8005"
+export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gpt-4o-2024-08-06"
 
 # 运行测试
@@ -183,7 +183,7 @@ from conceptgraph.llava.unified_client import chat_completions
 
 response = chat_completions(
     messages=[{"role": "user", "content": "你好"}],
-    base_url="http://10.21.231.7:8005",
+    base_url="http://10.21.231.7:8006",
     model="gpt-4o-2024-08-06"
 )
 ```
@@ -202,7 +202,7 @@ response = chat(query="描述图像", image=image)
 
 #### 运行场景图生成
 ```bash
-export LLM_BASE_URL="http://10.21.231.7:8005"
+export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gpt-4o-2024-08-06"
 
 cd /home/shyue/codebase/concept-graphs/bashes

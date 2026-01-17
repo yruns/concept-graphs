@@ -13,6 +13,7 @@
 """
 
 import json
+import os
 import re
 from typing import List, Dict, Any, Optional
 from pathlib import Path
@@ -198,10 +199,18 @@ class EnhancedAffordanceExtractor:
         try:
             from conceptgraph.llava.unified_client import chat_completions
             
+            model_name = os.getenv("LLM_MODEL")
+            if not model_name:
+                raise ValueError("环境变量 LLM_MODEL 必须显式设置，例如: export LLM_MODEL=gemini-3-flash-preview")
+            base_url = os.getenv("LLM_BASE_URL")
+            if not base_url:
+                raise ValueError("环境变量 LLM_BASE_URL 必须显式设置，例如: export LLM_BASE_URL=http://10.21.231.7:8006")
             response = chat_completions(
                 messages=[{"role": "user", "content": prompt}],
+                model=model_name,
                 temperature=0.3,
                 max_tokens=2000,
+                base_url=base_url,
                 timeout=60.0
             )
             

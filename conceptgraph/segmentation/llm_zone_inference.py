@@ -84,7 +84,7 @@ class LLMZoneInference:
         Args:
             base_url: LLM服务地址，默认从环境变量LLM_BASE_URL读取
         """
-        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8005")
+        self.base_url = base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8006")
     
     def run_inference(
         self,
@@ -375,12 +375,16 @@ class LLMZoneInference:
         """调用LLM"""
         from conceptgraph.llava.unified_client import chat_completions
         
+        model_name = os.getenv("LLM_MODEL")
+        if not model_name:
+            raise ValueError("环境变量 LLM_MODEL 必须显式设置，例如: export LLM_MODEL=gemini-3-flash-preview")
         response = chat_completions(
             messages=[{"role": "user", "content": prompt}],
+            model=model_name,
             temperature=0.3,
-            max_tokens=3000,
+            max_tokens=16000,  # 增大以支持大量物体的分配
             base_url=self.base_url,
-            timeout=120.0
+            timeout=180.0  # 增加超时
         )
         
         return response.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -420,19 +424,31 @@ class LLMZoneInference:
         """解析物体分配响应"""
         # 调试: 打印原始响应
         print(f"    [DEBUG] LLM响应长度: {len(response)} 字符")
-        print(f"    [DEBUG] 响应前500字符: {response[:500]}")
         
+        # 尝试多种方式提取JSON
+        json_str = response
+        
+        # 方式1: 提取```json ... ``` 之间的内容
         json_match = re.search(r'```json\s*(.*?)\s*```', response, re.DOTALL)
         if json_match:
-            response = json_match.group(1)
-            print(f"    [DEBUG] 提取JSON后长度: {len(response)}")
+            json_str = json_match.group(1)
+            print(f"    [DEBUG] 通过```json```提取, 长度: {len(json_str)}")
+        else:
+            # 方式2: 提取第一个 { 到最后一个 } 之间的内容
+            brace_match = re.search(r'\{.*\}', response, re.DOTALL)
+            if brace_match:
+                json_str = brace_match.group(0)
+                print(f"    [DEBUG] 通过大括号提取, 长度: {len(json_str)}")
+            else:
+                print(f"    [DEBUG] 无法提取JSON内容")
         
         try:
-            data = json.loads(response)
+            data = json.loads(json_str)
             assignments = data.get("object_assignments", [])
             print(f"    [DEBUG] 解析成功, object_assignments数量: {len(assignments)}")
         except json.JSONDecodeError as e:
             print(f"    [DEBUG] JSON解析失败: {e}")
+            print(f"    [DEBUG] 尝试解析的内容前200字符: {json_str[:200]}")
             return ObjectAssignmentResult(assignments=[])
         
         return ObjectAssignmentResult(
