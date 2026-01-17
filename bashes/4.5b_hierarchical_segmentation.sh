@@ -28,8 +28,8 @@
 set -e
 
 # 加载环境变量
-if [ -f "../env_vars.bash" ]; then
-    source ../env_vars.bash
+if [ -f "./env_vars.bash" ]; then
+    source ./env_vars.bash
 fi
 
 # 设置LLM服务地址 (如果未设置则使用默认值)

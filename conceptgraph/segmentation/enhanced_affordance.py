@@ -127,11 +127,10 @@ class EnhancedAffordanceExtractor:
         results = []
         
         for i, obj in enumerate(objects):
-            tag = obj.get('curr_obj_name', obj.get('tag', f'object_{i}')).lower()
-            tag_clean = self._clean_tag(tag)
-            
+            tag = (obj.get("class_name")[0] or f'object_{i}').lower()
+
             # 查找映射
-            affordance_info = self._find_affordance_info(tag_clean)
+            affordance_info = self._find_affordance_info(tag)
             
             # 构建EnhancedAffordance列表
             affordances = []
@@ -140,7 +139,7 @@ class EnhancedAffordanceExtractor:
                     action=action,
                     context=self._infer_context(action),
                     duration=self._infer_duration(action),
-                    co_objects=self._infer_co_objects(tag_clean, action),
+                    co_objects=self._infer_co_objects(tag, action),
                     posture=self._infer_posture(action),
                     frequency="occasional"
                 ))
@@ -173,11 +172,10 @@ class EnhancedAffordanceExtractor:
         object_list = []
         for i, obj in enumerate(objects):
             tag = obj.get('curr_obj_name', obj.get('tag', f'object_{i}')).lower()
-            tag_clean = self._clean_tag(tag)
             caption = captions.get(i, "")
             object_list.append({
                 "id": i,
-                "tag": tag_clean,
+                "tag": tag,
                 "description": caption[:200] if caption else ""
             })
         
