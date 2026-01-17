@@ -127,7 +127,21 @@ class EnhancedAffordanceExtractor:
         results = []
         
         for i, obj in enumerate(objects):
-            tag = (obj.get("class_name")[0] or f'object_{i}').lower()
+            # 获取类别名称 - class_name是一个列表，取最常见的非'item'类别
+            class_names = obj.get("class_name", [])
+            if isinstance(class_names, list) and class_names:
+                # 过滤掉 'item' 并取最常见的类别
+                valid_names = [n for n in class_names if n and n.lower() != 'item']
+                if valid_names:
+                    from collections import Counter
+                    tag = Counter(valid_names).most_common(1)[0][0].lower()
+                else:
+                    tag = class_names[0].lower() if class_names[0] else f'object_{i}'
+            else:
+                tag = f'object_{i}'
+            
+            # 清理tag
+            tag = self._clean_tag(tag)
 
             # 查找映射
             affordance_info = self._find_affordance_info(tag)
@@ -154,7 +168,7 @@ class EnhancedAffordanceExtractor:
             # 创建ObjectInfo
             obj_info = ObjectInfo(
                 object_id=i,
-                object_tag=tag_clean,
+                object_tag=tag,
                 relation_type=ObjectRegionRelation.SUPPORTING,  # 默认，后续会更新
                 affordances=affordances,
                 typical_zones=affordance_info.get("zones", []),
@@ -171,7 +185,19 @@ class EnhancedAffordanceExtractor:
         # 准备批量请求
         object_list = []
         for i, obj in enumerate(objects):
-            tag = obj.get('curr_obj_name', obj.get('tag', f'object_{i}')).lower()
+            # 获取类别名称
+            class_names = obj.get("class_name", [])
+            if isinstance(class_names, list) and class_names:
+                valid_names = [n for n in class_names if n and n.lower() != 'item']
+                if valid_names:
+                    from collections import Counter
+                    tag = Counter(valid_names).most_common(1)[0][0].lower()
+                else:
+                    tag = class_names[0].lower() if class_names[0] else f'object_{i}'
+            else:
+                tag = obj.get('curr_obj_name', obj.get('tag', f'object_{i}')).lower()
+            tag = self._clean_tag(tag)
+            
             caption = captions.get(i, "")
             object_list.append({
                 "id": i,

@@ -26,7 +26,8 @@ class HierarchicalSceneBuilder:
     
     def __init__(self, scene_path: str, stride: int = 5, n_keyframes: int = 15,
                  visibility_radius: float = 3.0, use_vlm: bool = True,
-                 use_llm: bool = True, llm_base_url: str = None):
+                 use_llm: bool = True, llm_base_url: str = None,
+                 pcd_file: str = None, cache_dir: str = None):
         self.scene_path = Path(scene_path)
         self.stride = stride
         self.n_keyframes = n_keyframes
@@ -34,6 +35,8 @@ class HierarchicalSceneBuilder:
         self.use_vlm = use_vlm
         self.use_llm = use_llm
         self.llm_base_url = llm_base_url or os.getenv("LLM_BASE_URL", "http://10.21.231.7:8006")
+        self.pcd_file = Path(pcd_file) if pcd_file else None
+        self.cache_dir = Path(cache_dir) if cache_dir else None
         
         self.poses = None
         self.objects = None
@@ -90,11 +93,22 @@ class HierarchicalSceneBuilder:
         self.poses = np.array(all_poses[::self.stride])
         print(f"  位姿: {len(self.poses)} 帧")
         
-        pcd_files = list((self.scene_path / 'pcd_saves').glob('*_post.pkl.gz'))
-        if not pcd_files:
-            pcd_files = list((self.scene_path / 'pcd_saves').glob('*.pkl.gz'))
-        if pcd_files:
-            with gzip.open(pcd_files[0], 'rb') as f:
+        # 如果指定了pcd文件，直接使用；否则自动查找
+        if self.pcd_file and self.pcd_file.exists():
+            pcd_file = self.pcd_file
+        else:
+            # 自动查找pcd文件，优先类别感知版本
+            pcd_dir = self.scene_path / 'pcd_saves'
+            pcd_files = []
+            for pattern in ['*ram_withbg_allclasses*_post.pkl.gz', '*ram*_post.pkl.gz', '*_post.pkl.gz', '*.pkl.gz']:
+                pcd_files = list(pcd_dir.glob(pattern))
+                if pcd_files:
+                    break
+            pcd_file = pcd_files[0] if pcd_files else None
+        
+        if pcd_file:
+            print(f"  加载pcd文件: {pcd_file.name}")
+            with gzip.open(pcd_file, 'rb') as f:
                 data = pickle.load(f)
             self.objects = data.get('objects', [])
             print(f"  3D物体: {len(self.objects)} 个")
@@ -106,12 +120,27 @@ class HierarchicalSceneBuilder:
                 self.objects, self.poses, self.visibility_radius)
     
     def _extract_affordances(self):
+        """提取物体的affordance，使用captions和类别信息"""
         captions = {}
-        captions_file = self.scene_path / 'captions.json'
+        
+        # 加载captions文件 (由步骤4生成)
+        # 如果指定了cache_dir，使用它；否则使用默认的sg_cache
+        cache_dir = self.cache_dir if self.cache_dir else self.scene_path / 'sg_cache'
+        captions_file = cache_dir / 'cfslam_llava_captions.json'
         if captions_file.exists():
             with open(captions_file) as f:
-                for item in json.load(f):
-                    captions[item.get('id', item.get('object_id'))] = item.get('caption', '')
+                captions_data = json.load(f)
+                # 格式: [{"id": 0, "captions": ["caption1", "caption2", ...], "low_confidences": [...]}, ...]
+                for item in captions_data:
+                    obj_id = item.get('id')
+                    obj_captions = item.get('captions', [])
+                    # 合并多个captions，用第一个作为主要描述
+                    if obj_captions:
+                        captions[obj_id] = obj_captions[0]  # 使用第一个caption
+            print(f"  加载了 {len(captions)} 个物体的captions (from {cache_dir.name})")
+        else:
+            print(f"  警告: captions文件不存在: {captions_file}")
+        
         extractor = EnhancedAffordanceExtractor(use_llm=False)
         self.object_affordances = extractor.extract_affordances(self.objects, captions)
         print(f"  提取了 {len(self.object_affordances)} 个物体的Affordance")
@@ -243,6 +272,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("--scene_path", type=str, required=True)
+    parser.add_argument("--pcd_file", type=str, default=None, help="指定pcd文件路径")
+    parser.add_argument("--cache_dir", type=str, default=None, help="captions缓存目录")
     parser.add_argument("--output", type=str, default=None)
     parser.add_argument("--stride", type=int, default=5)
     parser.add_argument("--no_vlm", action="store_true")
@@ -250,4 +281,6 @@ if __name__ == "__main__":
     parser.add_argument("--llm_url", type=str, default=None, help="LLM服务地址，默认从LLM_BASE_URL环境变量读取")
     args = parser.parse_args()
     build_hierarchical_scene_graph(args.scene_path, args.output, stride=args.stride,
-                                   use_vlm=not args.no_vlm, use_llm=not args.no_llm, llm_base_url=args.llm_url)
+                                   use_vlm=not args.no_vlm, use_llm=not args.no_llm, 
+                                   llm_base_url=args.llm_url, pcd_file=args.pcd_file,
+                                   cache_dir=args.cache_dir)
