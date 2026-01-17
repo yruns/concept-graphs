@@ -483,7 +483,7 @@ def refine_node_captions(args):
     # load the prompt
     gpt_messages = GPTPrompt().get_json()
 
-    TIMEOUT = 25  # Timeout in seconds
+    TIMEOUT = 60  # Timeout in seconds
 
     responses_savedir = Path(args.cachedir) / "cfslam_gpt-4_responses"
     responses_savedir.mkdir(exist_ok=True, parents=True)
@@ -527,22 +527,7 @@ def refine_node_captions(args):
             base_url=base_url,
             timeout=TIMEOUT,
         )
-        elapsed_time = time.time() - start_time
-        if elapsed_time > TIMEOUT:
-            print("Timed out exceeded!")
-            _dict["response"] = "FAIL"
-            # responses.append('{"object_tag": "FAIL"}')
-            save_json_to_file(_dict, responses_savedir / f"{_caption['id']}.json")
-            responses.append(json.dumps(_dict))
-            unsucessful_responses += 1
-            continue
-        
-        # count unsucessful responses
-        if "invalid" in chat_completion["choices"][0]["message"]["content"].strip("\n"):
-            unsucessful_responses += 1
-            
         # print output
-        prjson([{"role": "user", "content": preds}])
         print(chat_completion["choices"][0]["message"]["content"])
         print(f"Unsucessful responses so far: {unsucessful_responses}")
         _dict["response"] = chat_completion["choices"][0]["message"]["content"].strip("\n")
@@ -550,20 +535,7 @@ def refine_node_captions(args):
         # save the response
         responses.append(json.dumps(_dict))
         save_json_to_file(_dict, responses_savedir / f"{_caption['id']}.json")
-        # responses.append(chat_completion["choices"][0]["message"]["content"].strip("\n"))
 
-    # tags = []
-    # for response in responses:
-    #     try:
-    #         parsed = json.loads(response)
-    #         tags.append(parsed["object_tag"])
-    #     except:
-    #         tags.append("FAIL")
-
-    # Save the responses to a text file
-    # with open(Path(args.cachedir) / "gpt-3.5-turbo_responses.txt", "w") as f:
-    #     for response in responses:
-    #         f.write(response + "\n")
     with open(Path(args.cachedir) / "cfslam_gpt-4_responses.pkl", "wb") as f:
         pkl.dump(responses, f)
 

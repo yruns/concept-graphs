@@ -58,6 +58,9 @@ class HierarchicalSceneBuilder:
         self._load_data()
         print("\n[2/7] 提取物体Affordance...")
         self._extract_affordances()
+        # 如果有预提取的affordances，使用它们
+        if hasattr(self, 'pre_extracted_affordances') and self.pre_extracted_affordances:
+            self._use_pre_extracted_affordances()
         print("\n[3/7] 选取关键帧...")
         self._select_keyframes()
         print("\n[4/7] 分析轨迹行为...")
@@ -120,30 +123,92 @@ class HierarchicalSceneBuilder:
                 self.objects, self.poses, self.visibility_radius)
     
     def _extract_affordances(self):
-        """提取物体的affordance，使用captions和类别信息"""
+        """提取物体的affordance，优先使用object_affordances.json（步骤5B+输出）"""
         captions = {}
+        pre_extracted_affordances = {}
         
-        # 加载captions文件 (由步骤4生成)
-        # 如果指定了cache_dir，使用它；否则使用默认的sg_cache
         cache_dir = self.cache_dir if self.cache_dir else self.scene_path / 'sg_cache'
-        captions_file = cache_dir / 'cfslam_llava_captions.json'
-        if captions_file.exists():
-            with open(captions_file) as f:
-                captions_data = json.load(f)
-                # 格式: [{"id": 0, "captions": ["caption1", "caption2", ...], "low_confidences": [...]}, ...]
+        
+        # 优先尝试加载 object_affordances.json（步骤5B+输出，包含图像分析）
+        affordances_file = cache_dir / 'object_affordances.json'
+        if affordances_file.exists():
+            with open(affordances_file) as f:
+                affordances_data = json.load(f)
+            for item in affordances_data:
+                obj_id = item.get('id')
+                tag = item.get('object_tag', '')
+                summary = item.get('summary', '')
+                captions[obj_id] = f"{tag}: {summary}" if tag and summary else (tag or summary)
+                # 保存预提取的affordances
+                if 'affordances' in item:
+                    pre_extracted_affordances[obj_id] = item['affordances']
+                    pre_extracted_affordances[obj_id]['object_tag'] = tag
+                    pre_extracted_affordances[obj_id]['category'] = item.get('category', '')
+            print(f"  加载了 {len(captions)} 个物体的affordances (from object_affordances.json)")
+            self.pre_extracted_affordances = pre_extracted_affordances
+            return  # 直接使用预提取的affordances，跳过EnhancedAffordanceExtractor
+        
+        # 回退：尝试加载步骤5的精炼结果 (cfslam_gpt-4_responses/)
+        refined_dir = cache_dir / 'cfslam_gpt-4_responses'
+        if refined_dir.exists():
+            refined_files = list(refined_dir.glob('*.json'))
+            if refined_files:
+                for rf in refined_files:
+                    try:
+                        with open(rf) as f:
+                            data = json.load(f)
+                        obj_id = data.get('id')
+                        response = data.get('response', '{}')
+                        if isinstance(response, str):
+                            response = json.loads(response)
+                        summary = response.get('summary', '')
+                        tag = response.get('object_tag', '')
+                        if summary or tag:
+                            captions[obj_id] = f"{tag}: {summary}" if tag and summary else (tag or summary)
+                    except Exception as e:
+                        continue
+                print(f"  加载了 {len(captions)} 个物体的精炼描述 (from {refined_dir.name})")
+        
+        # 最后回退：步骤4的原始captions
+        if len(captions) < len(self.objects):
+            captions_file = cache_dir / 'cfslam_llava_captions.json'
+            if captions_file.exists():
+                with open(captions_file) as f:
+                    captions_data = json.load(f)
                 for item in captions_data:
                     obj_id = item.get('id')
-                    obj_captions = item.get('captions', [])
-                    # 合并多个captions，用第一个作为主要描述
-                    if obj_captions:
-                        captions[obj_id] = obj_captions[0]  # 使用第一个caption
-            print(f"  加载了 {len(captions)} 个物体的captions (from {cache_dir.name})")
-        else:
-            print(f"  警告: captions文件不存在: {captions_file}")
+                    if obj_id not in captions:
+                        obj_captions = item.get('captions', [])
+                        if obj_captions:
+                            captions[obj_id] = obj_captions[0][:500]
+                print(f"  补充了原始captions，总计 {len(captions)} 个物体")
         
+        if not captions:
+            print(f"  警告: 未找到任何captions文件")
+        
+        self.pre_extracted_affordances = None
+        
+        # 使用EnhancedAffordanceExtractor提取（回退路径）
         extractor = EnhancedAffordanceExtractor(use_llm=False)
         self.object_affordances = extractor.extract_affordances(self.objects, captions)
         print(f"  提取了 {len(self.object_affordances)} 个物体的Affordance")
+    
+    def _use_pre_extracted_affordances(self):
+        """使用预提取的affordances（来自object_affordances.json）"""
+        self.object_affordances = []
+        for i, obj in enumerate(self.objects):
+            aff = self.pre_extracted_affordances.get(i, {})
+            self.object_affordances.append({
+                "object_id": i,
+                "tag": aff.get('object_tag', f'object_{i}'),
+                "category": aff.get('category', ''),
+                "primary_functions": aff.get('primary_functions', []),
+                "interaction_type": aff.get('interaction_type', 'other'),
+                "typical_location": aff.get('typical_location', ''),
+                "co_objects": aff.get('co_objects', []),
+                "usage_context": aff.get('usage_context', ''),
+            })
+        print(f"  使用预提取的 {len(self.object_affordances)} 个物体Affordance")
     
     def _select_keyframes(self):
         if self.visibility_matrix is None or self.visibility_matrix.size == 0:
