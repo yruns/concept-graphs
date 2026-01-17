@@ -33,7 +33,7 @@ source /home/shyue/codebase/concept-graphs/env_vars.bash
 # 配置统一LLM客户端
 export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gemini-3-flash-preview"
-export NUM_WORKERS=4
+export NUM_WORKERS=10
 
 # 场景设置
 SCENE_NAME=room0
@@ -72,6 +72,11 @@ if [ ! -f "${REPLICA_ROOT}/${SCENE_NAME}/pcd_saves/${PKL_FILENAME}" ]; then
     echo "请先运行步骤 2 (2_build_3d_object_map.sh)"
     exit 1
 fi
+
+echo "python scenegraph/build_scenegraph_cfslam.py \
+    --mode extract-node-captions \
+    --cachedir ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache \
+    --mapfile ${REPLICA_ROOT}/${SCENE_NAME}/pcd_saves/${PKL_FILENAME}"
 
 # 提取物体描述
 python scenegraph/build_scenegraph_cfslam.py \
