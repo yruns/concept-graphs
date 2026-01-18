@@ -114,14 +114,22 @@ python -m conceptgraph.segmentation.hierarchical_visualizer \
     --scene_path "${SCENE_PATH}" \
     --pcd_file "${SCENE_PATH}/pcd_saves/${PKL_FILE}"
 
+# Evaluate segmentation quality
+echo ""
+echo "Evaluating segmentation quality..."
+python -m conceptgraph.segmentation.evaluate_segmentation \
+    --scene_graph "${OUTPUT_DIR}/hierarchical_scene_graph.json" \
+    --output "${OUTPUT_DIR}/evaluation_result.json"
+
 echo ""
 echo "============================================================"
-echo "完成! 输出文件:"
+echo "Done! Output files:"
 echo "  - ${OUTPUT_DIR}/hierarchical_scene_graph.json"
 echo "  - ${OUTPUT_DIR}/hierarchical_dashboard.png"
 echo "  - ${OUTPUT_DIR}/zone_map_topdown.png"
-echo "  - ${OUTPUT_DIR}/zones_colored.ply (3D点云)"
+echo "  - ${OUTPUT_DIR}/zones_colored.ply (3D point cloud)"
 echo "  - ${OUTPUT_DIR}/zones_colored_legend.png"
-echo "  - ${OUTPUT_DIR}/keyframes/ (关键帧可视化)"
+echo "  - ${OUTPUT_DIR}/keyframes/ (keyframe visualization)"
+echo "  - ${OUTPUT_DIR}/evaluation_result.json"
 echo "  - ${OUTPUT_DIR}/scene_summary.json"
 echo "============================================================"

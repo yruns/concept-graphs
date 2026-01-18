@@ -230,53 +230,63 @@ class LLMZoneInference:
         # 格式化轨迹行为
         trajectory_text = self._format_trajectory_behavior(trajectory_behavior)
         
-        return f"""你是场景理解专家。请根据以下证据，划分这个场景的功能区域。
+        return f"""You are a scene understanding expert. Analyze the evidence below and identify functional zones in this scene.
 
-## 视频分析结果
+## Video Analysis Results
 {keyframe_text}
 
-## 检测到的物体组合
+## Detected Object Combinations
 {combo_text}
 
-## 相机轨迹行为
+## Camera Trajectory Behavior
 {trajectory_text}
 
-## 任务
-请划分功能区域。注意：
-1. 功能区域不等于房间，一个房间可能有多个功能区域
-2. 每个区域应该支持特定的活动/任务
-3. 识别区域之间的边界和过渡
+## Task
+Identify functional zones following these principles:
 
-## 输出格式 (JSON)
+1. **Spatial Coherence**: Each zone should be a spatially contiguous area. Objects in the same zone should be close to each other.
+
+2. **Functional Purpose**: Each zone should support specific activities (e.g., seating for relaxation, storage for organization).
+
+3. **Zone Types to Consider**:
+   - Seating/Lounge zones (sofa, chairs, coffee table grouped together)
+   - Work/Study zones (desk, chair, lamp)
+   - Storage/Display zones (shelf, cabinet, decorative items in one area)
+   - Entry/Transition zones (near doors, hallways)
+   - Note: Avoid creating "utility zone" for scattered items like vents, thermostats - these should be supporting objects in other zones.
+
+4. **Minimum Zone Requirements**: A valid zone needs at least 2-3 functionally related objects that are spatially close.
+
+## Output Format (JSON)
 ```json
 {{
   "functional_zones": [
     {{
       "zone_id": "fz_0",
-      "zone_name": "cooking_zone",
-      "primary_function": "烹饪和食物加热",
-      "supported_activities": ["cook", "fry", "boil"],
+      "zone_name": "lounge_zone",
+      "primary_function": "Relaxation and socializing",
+      "supported_activities": ["sit", "relax", "socialize", "read"],
       "defining_evidence": {{
-        "video": "关键帧显示炉灶和抽油烟机",
-        "objects": "检测到stove, range_hood, pot",
-        "trajectory": "用户在此停留较长时间"
+        "video": "Keyframe shows sofa arrangement with coffee table",
+        "objects": "Detected sofa, armchair, coffee_table, ottoman",
+        "trajectory": "Camera dwells in this area"
       }},
-      "spatial_hint": "场景左侧区域",
+      "spatial_hint": "Center-left area of the room",
       "confidence": 0.9
     }}
   ],
   "zone_boundaries": [
     {{
       "between": ["fz_0", "fz_1"],
-      "indicator": "厨房岛台作为分隔",
+      "indicator": "Bookshelf acts as divider",
       "type": "soft"
     }}
   ],
-  "reasoning": "整体推理说明..."
+  "reasoning": "Overall reasoning..."
 }}
 ```
 
-请直接输出JSON，不要添加其他说明。"""
+Output JSON only, no additional explanation."""
     
     def _build_assignment_prompt(
         self,
@@ -284,56 +294,30 @@ class LLMZoneInference:
         object_affordances: List[ObjectInfo],
         object_positions: Dict[int, List[float]]
     ) -> str:
-        """构建物体分配prompt"""
+        """构建物体分配prompt - 简洁版本"""
         zones_text = self._format_zones(zones)
         objects_text = self._format_object_affordances(object_affordances)
-        positions_text = self._format_positions(object_affordances, object_positions)
+        spatial_clusters = self._compute_spatial_clusters(object_affordances, object_positions)
         
-        return f"""你是物体-区域关系专家。请根据以下信息，将物体分配到对应的功能区域。
+        return f"""Assign objects to functional zones. Consider BOTH spatial proximity AND functional relevance.
 
-## 已识别的功能区域
+## Zones
 {zones_text}
 
-## 待分配的物体及其功能属性
+## Objects (id, tag, functions)
 {objects_text}
 
-## 物体空间位置信息
-{positions_text}
+## Spatial Info
+{spatial_clusters}
 
-## 任务
-为每个物体判断：
-1. 它属于哪个功能区域？
-2. 它与该区域是什么关系？
-   - defining: 定义性（物体定义了区域，如炉灶定义烹饪区）
-   - supporting: 支持性（物体支持区域功能，如锅具支持烹饪）
-   - shared: 共享性（物体被多个区域共享，如垃圾桶）
-   - boundary: 边界性（物体位于区域边界，如吧台）
+## Rules
+- Objects in same zone should be spatially close (<2m) AND functionally related
+- relation_type: defining (core furniture), supporting (accessories), shared (distributed items)
 
-## 输出格式 (JSON)
+## Output (JSON only)
 ```json
-{{
-  "object_assignments": [
-    {{
-      "object_id": 0,
-      "object_tag": "stove",
-      "assigned_zone": "fz_0",
-      "relation_type": "defining",
-      "confidence": 0.95,
-      "reasoning": "炉灶是烹饪区的核心设备"
-    }}
-  ],
-  "unassigned_objects": [
-    {{
-      "object_id": 12,
-      "object_tag": "wall_decoration",
-      "reason": "装饰物不属于特定功能区域"
-    }}
-  ],
-  "conflicts_detected": []
-}}
-```
-
-请直接输出JSON，不要添加其他说明。"""
+{{"object_assignments": [{{"object_id": 0, "object_tag": "sofa", "assigned_zone": "fz_0", "relation_type": "defining"}}]}}
+```"""
     
     def _build_validation_prompt(
         self,
@@ -382,9 +366,9 @@ class LLMZoneInference:
             messages=[{"role": "user", "content": prompt}],
             model=model_name,
             temperature=0.3,
-            max_tokens=16000,  # 增大以支持大量物体的分配
+            max_tokens=8000,  # Reduced for faster response
             base_url=self.base_url,
-            timeout=180.0  # 增加超时
+            timeout=300.0  # 5 minutes timeout
         )
         
         return response.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -553,8 +537,72 @@ class LLMZoneInference:
         for obj in objects:
             pos = positions.get(obj.object_id) or obj.position
             if pos:
-                lines.append(f"- [{obj.object_id}] {obj.object_tag}: ({pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f})")
-        return "\n".join(lines) if lines else "无位置数据"
+                lines.append(f"- [{obj.object_id}] {obj.object_tag}: ({pos[0]:.2f}, {pos[1]:.2f}, {pos[2]:.2f})")
+        return "\n".join(lines) if lines else "No position data"
+    
+    def _compute_spatial_clusters(
+        self,
+        objects: List[ObjectInfo],
+        positions: Dict[int, List[float]],
+        distance_threshold: float = 1.5
+    ) -> str:
+        """Compute spatial clusters based on object proximity (compact output)"""
+        import numpy as np
+        
+        # Collect objects with positions
+        obj_positions = []
+        for obj in objects:
+            pos = positions.get(obj.object_id) or obj.position
+            if pos:
+                obj_positions.append((obj.object_id, obj.object_tag, np.array(pos)))
+        
+        if len(obj_positions) < 2:
+            return "Insufficient position data"
+        
+        # Simple agglomerative clustering
+        n = len(obj_positions)
+        clusters = [[i] for i in range(n)]
+        
+        # Compute distance matrix
+        distances = np.zeros((n, n))
+        for i in range(n):
+            for j in range(i + 1, n):
+                dist = np.linalg.norm(obj_positions[i][2] - obj_positions[j][2])
+                distances[i, j] = dist
+                distances[j, i] = dist
+        
+        # Merge clusters within threshold
+        merged = True
+        while merged:
+            merged = False
+            for i in range(len(clusters)):
+                for j in range(i + 1, len(clusters)):
+                    for oi in clusters[i]:
+                        for oj in clusters[j]:
+                            if distances[oi, oj] < distance_threshold:
+                                clusters[i] = clusters[i] + clusters[j]
+                                clusters.pop(j)
+                                merged = True
+                                break
+                        if merged:
+                            break
+                    if merged:
+                        break
+                if merged:
+                    break
+        
+        # Format output (compact - only show top 5 clusters)
+        lines = []
+        cluster_idx = 0
+        for cluster in sorted(clusters, key=len, reverse=True)[:5]:
+            if len(cluster) >= 3:  # Only clusters with 3+ objects
+                cluster_idx += 1
+                obj_names = [obj_positions[i][1] for i in cluster[:6]]
+                if len(cluster) > 6:
+                    obj_names.append(f"+{len(cluster)-6}")
+                lines.append(f"Group{cluster_idx}: {', '.join(obj_names)}")
+        
+        return "\n".join(lines) if lines else "Objects are spatially distributed"
     
     def _summarize_evidence(
         self, 

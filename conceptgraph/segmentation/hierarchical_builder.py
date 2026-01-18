@@ -220,20 +220,98 @@ class HierarchicalSceneBuilder:
             typical_location = aff.get('typical_location', '')
             typical_zones = [f"{typical_location}_zone"] if typical_location else []
             
+            # 智能推断 relation_type 和 importance_score
+            relation_type, importance_score = self._infer_object_importance(
+                aff.get('object_tag', ''),
+                aff.get('category', ''),
+                aff.get('interaction_type', ''),
+                aff.get('primary_functions', [])
+            )
+            
             # 创建 ObjectInfo 对象
             obj_info = ObjectInfo(
                 object_id=i,
                 object_tag=aff.get('object_tag', f'object_{i}'),
-                relation_type=ObjectRegionRelation.SUPPORTING,
+                relation_type=relation_type,
                 position=position,
                 affordances=affordances,
                 typical_zones=typical_zones,
-                importance_score=0.5,
+                importance_score=importance_score,
                 reasoning=aff.get('usage_context', '')
             )
             self.object_affordances.append(obj_info)
         
-        print(f"  使用预提取的 {len(self.object_affordances)} 个物体Affordance")
+        print(f"  Used {len(self.object_affordances)} pre-extracted object affordances")
+    
+    def _infer_object_importance(self, tag: str, category: str, interaction_type: str, 
+                                  functions: list) -> tuple:
+        """
+        Infer relation_type and importance_score based on object characteristics.
+        
+        Returns:
+            (ObjectRegionRelation, importance_score)
+        """
+        tag_lower = tag.lower()
+        category_lower = category.lower() if category else ''
+        
+        # Defining objects: large furniture that defines a zone
+        defining_keywords = [
+            'sofa', 'couch', 'bed', 'desk', 'dining_table', 'kitchen_island',
+            'stove', 'refrigerator', 'bathtub', 'shower', 'toilet', 'wardrobe',
+            'bookshelf', 'tv_stand', 'entertainment_center'
+        ]
+        
+        # High importance categories
+        high_importance_categories = ['seating', 'sleeping', 'cooking', 'work']
+        
+        # Boundary objects: typically at zone edges
+        boundary_keywords = ['door', 'doorway', 'partition', 'divider', 'screen', 'curtain']
+        
+        # Shared/utility objects: often distributed
+        shared_keywords = ['thermostat', 'vent', 'smoke_detector', 'outlet', 'switch', 
+                          'ceiling_light', 'air_vent', 'fire_alarm']
+        
+        # Determine relation_type
+        relation_type = ObjectRegionRelation.SUPPORTING  # default
+        
+        for kw in defining_keywords:
+            if kw in tag_lower:
+                relation_type = ObjectRegionRelation.DEFINING
+                break
+        
+        for kw in boundary_keywords:
+            if kw in tag_lower:
+                relation_type = ObjectRegionRelation.BOUNDARY
+                break
+        
+        for kw in shared_keywords:
+            if kw in tag_lower:
+                relation_type = ObjectRegionRelation.SHARED
+                break
+        
+        # Determine importance_score
+        importance_score = 0.5  # default
+        
+        if relation_type == ObjectRegionRelation.DEFINING:
+            importance_score = 0.9
+        elif relation_type == ObjectRegionRelation.BOUNDARY:
+            importance_score = 0.7
+        elif relation_type == ObjectRegionRelation.SHARED:
+            importance_score = 0.3
+        else:
+            # For supporting objects, use category to refine
+            if category_lower in high_importance_categories:
+                importance_score = 0.7
+            elif category_lower in ['lighting', 'storage']:
+                importance_score = 0.5
+            elif category_lower in ['decor', 'accessory']:
+                importance_score = 0.4
+            
+            # Boost if object has many functions
+            if len(functions) >= 3:
+                importance_score = min(importance_score + 0.1, 0.9)
+        
+        return relation_type, importance_score
     
     def _select_keyframes(self):
         if self.visibility_matrix is None or self.visibility_matrix.size == 0:
