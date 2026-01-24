@@ -258,17 +258,41 @@ class QuerySceneRepresentation:
         ], dtype=np.float32)
     
     def _set_image_paths(self, scene_path: Path, stride: int) -> None:
-        """Set paths to RGB and depth images."""
-        color_dir = scene_path / 'results' / 'color'
-        depth_dir = scene_path / 'results' / 'depth'
+        """Set paths to RGB and depth images.
         
+        Supports multiple directory structures:
+        - results/color/*.jpg + results/depth/*.png (standard)
+        - results/frame*.jpg + results/depth*.png (Replica flat)
+        """
+        results_dir = scene_path / 'results'
+        color_dir = results_dir / 'color'
+        depth_dir = results_dir / 'depth'
+        
+        # Try standard structure first
         if color_dir.exists():
             all_images = sorted(color_dir.glob('*.jpg')) + sorted(color_dir.glob('*.png'))
+        elif results_dir.exists():
+            # Replica flat structure: results/frame*.jpg
+            all_images = sorted(results_dir.glob('frame*.jpg'))
+            if not all_images:
+                all_images = sorted(results_dir.glob('*.jpg'))
+        else:
+            all_images = []
+        
+        if all_images:
             self.image_paths = [all_images[i] for i in range(0, len(all_images), stride) 
                                if i < len(all_images)]
         
+        # Try standard depth structure first
         if depth_dir.exists():
             all_depths = sorted(depth_dir.glob('*.png')) + sorted(depth_dir.glob('*.npy'))
+        elif results_dir.exists():
+            # Replica flat structure: results/depth*.png
+            all_depths = sorted(results_dir.glob('depth*.png'))
+        else:
+            all_depths = []
+        
+        if all_depths:
             self.depth_paths = [all_depths[i] for i in range(0, len(all_depths), stride)
                                if i < len(all_depths)]
     
