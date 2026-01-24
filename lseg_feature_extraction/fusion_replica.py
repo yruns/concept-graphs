@@ -26,8 +26,8 @@ def get_args():
                         help="Path to LSeg checkpoint")
     parser.add_argument("--stride", type=int, default=8,
                         help="Frame stride for processing")
-    parser.add_argument("--downsample", type=int, default=4,
-                        help="Image downsample factor (integer stride)")
+    parser.add_argument("--resize_long_side", type=int, default=0,
+                        help="Resize images to this long side (0 = no resize)")
     parser.add_argument("--voxel_size", type=float, default=0.025,
                         help="Voxel size for multi-view fusion (meters)")
     parser.add_argument("--max_depth", type=float, default=10.0,
@@ -36,6 +36,8 @@ def get_args():
                         help="Depth scale for Replica depth PNGs")
     parser.add_argument("--lseg_img_long_side", type=int, default=640,
                         help="LSeg input long side for multi-scale eval")
+    parser.add_argument("--chunk_size", type=int, default=0,
+                        help="Number of frames per fusion chunk (0 = no chunking)")
     parser.add_argument("--fx", type=float, default=600.0)
     parser.add_argument("--fy", type=float, default=600.0)
     parser.add_argument("--cx", type=float, default=599.5)
@@ -220,10 +222,41 @@ def update_voxel_accumulators(
             weight_sum[idx] += weight_buf[i]
         else:
             voxel_index[key] = len(feat_sum)
-            feat_sum.append(feat_buf[i])
-            color_sum.append(color_buf[i])
-            coord_sum.append(coord_buf[i])
-            weight_sum.append(weight_buf[i])
+            feat_sum.append(feat_buf[i].copy())
+            color_sum.append(color_buf[i].copy())
+            coord_sum.append(coord_buf[i].copy())
+            weight_sum.append(weight_buf[i].copy())
+
+
+def init_accumulators():
+    return {}, [], [], [], []
+
+
+def merge_accumulators(
+    src_index: Dict[int, int],
+    src_feat_sum: list,
+    src_color_sum: list,
+    src_coord_sum: list,
+    src_weight_sum: list,
+    dst_index: Dict[int, int],
+    dst_feat_sum: list,
+    dst_color_sum: list,
+    dst_coord_sum: list,
+    dst_weight_sum: list,
+):
+    for key, src_idx in src_index.items():
+        if key in dst_index:
+            dst_idx = dst_index[key]
+            dst_feat_sum[dst_idx] += src_feat_sum[src_idx]
+            dst_color_sum[dst_idx] += src_color_sum[src_idx]
+            dst_coord_sum[dst_idx] += src_coord_sum[src_idx]
+            dst_weight_sum[dst_idx] += src_weight_sum[src_idx]
+        else:
+            dst_index[key] = len(dst_feat_sum)
+            dst_feat_sum.append(src_feat_sum[src_idx].copy())
+            dst_color_sum.append(src_color_sum[src_idx].copy())
+            dst_coord_sum.append(src_coord_sum[src_idx].copy())
+            dst_weight_sum.append(src_weight_sum[src_idx].copy())
 
 
 def main(args):
@@ -245,25 +278,37 @@ def main(args):
 
     evaluator, transform = load_lseg_model(args.lseg_model, args.lseg_img_long_side)
 
-    voxel_index: Dict[int, int] = {}
-    feat_sum = []
-    color_sum = []
-    coord_sum = []
-    weight_sum = []
+    voxel_index, feat_sum, color_sum, coord_sum, weight_sum = init_accumulators()
+
+    if args.chunk_size and args.chunk_size > 0:
+        chunk_index, chunk_feat_sum, chunk_color_sum, chunk_coord_sum, chunk_weight_sum = init_accumulators()
+        frames_in_chunk = 0
 
     for idx in tqdm(range(0, n_frames, args.stride), desc="Fusing frames"):
         rgb = imageio.imread(rgb_paths[idx])
         depth = imageio.imread(depth_paths[idx]).astype(np.float32) / args.depth_scale
 
-        if args.downsample > 1:
-            rgb = rgb[:: args.downsample, :: args.downsample]
-            depth = depth[:: args.downsample, :: args.downsample]
-            fx = args.fx / args.downsample
-            fy = args.fy / args.downsample
-            cx = args.cx / args.downsample
-            cy = args.cy / args.downsample
-        else:
-            fx, fy, cx, cy = args.fx, args.fy, args.cx, args.cy
+        fx, fy, cx, cy = args.fx, args.fy, args.cx, args.cy
+        if args.resize_long_side and args.resize_long_side > 0:
+            from PIL import Image
+            h, w = rgb.shape[:2]
+            long_side = max(h, w)
+            if long_side != args.resize_long_side:
+                scale = args.resize_long_side / float(long_side)
+                new_w = int(round(w * scale))
+                new_h = int(round(h * scale))
+                rgb = np.array(
+                    Image.fromarray(rgb).resize((new_w, new_h), resample=Image.BILINEAR)
+                )
+                depth = np.array(
+                    Image.fromarray(depth.astype(np.float32), mode="F").resize(
+                        (new_w, new_h), resample=Image.NEAREST
+                    )
+                ).astype(np.float32)
+                fx *= scale
+                fy *= scale
+                cx *= scale
+                cy *= scale
 
         feat_map = extract_lseg_img_feature_from_array(rgb, transform, evaluator)
         points, features, colors, weights = backproject_points(
@@ -278,12 +323,56 @@ def main(args):
             feat_map=feat_map,
         )
 
-        update_voxel_accumulators(
-            args.voxel_size,
-            points,
-            features,
-            colors,
-            weights,
+        if args.chunk_size and args.chunk_size > 0:
+            update_voxel_accumulators(
+                args.voxel_size,
+                points,
+                features,
+                colors,
+                weights,
+                chunk_index,
+                chunk_feat_sum,
+                chunk_color_sum,
+                chunk_coord_sum,
+                chunk_weight_sum,
+            )
+            frames_in_chunk += 1
+            if frames_in_chunk >= args.chunk_size:
+                merge_accumulators(
+                    chunk_index,
+                    chunk_feat_sum,
+                    chunk_color_sum,
+                    chunk_coord_sum,
+                    chunk_weight_sum,
+                    voxel_index,
+                    feat_sum,
+                    color_sum,
+                    coord_sum,
+                    weight_sum,
+                )
+                chunk_index, chunk_feat_sum, chunk_color_sum, chunk_coord_sum, chunk_weight_sum = init_accumulators()
+                frames_in_chunk = 0
+        else:
+            update_voxel_accumulators(
+                args.voxel_size,
+                points,
+                features,
+                colors,
+                weights,
+                voxel_index,
+                feat_sum,
+                color_sum,
+                coord_sum,
+                weight_sum,
+            )
+
+    if args.chunk_size and args.chunk_size > 0 and frames_in_chunk > 0:
+        merge_accumulators(
+            chunk_index,
+            chunk_feat_sum,
+            chunk_color_sum,
+            chunk_coord_sum,
+            chunk_weight_sum,
             voxel_index,
             feat_sum,
             color_sum,
@@ -312,7 +401,8 @@ def main(args):
         colors=colors,
         voxel_size=np.float32(args.voxel_size),
         stride=np.int32(args.stride),
-        downsample=np.int32(args.downsample),
+        resize_long_side=np.int32(args.resize_long_side),
+        chunk_size=np.int32(args.chunk_size),
         depth_scale=np.float32(args.depth_scale),
     )
 

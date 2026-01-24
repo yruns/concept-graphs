@@ -30,6 +30,7 @@ VOXEL_SIZE=0.025  # 2.5cm 体素大小 (与 ConceptGraphs 一致)
 LSEG_IMG_SIZE=640  # LSeg 输入图像长边 (越小越快，默认 480)
 MAX_DEPTH=10.0
 DEPTH_SCALE=6553.5
+RESIZE_LONG_SIDE=640
 
 # 激活 lseg 环境
 source /home/shyue/anaconda3/bin/activate lseg
@@ -72,10 +73,10 @@ python fusion_replica.py \
   --output_path "${OUTPUT_PATH}" \
   --lseg_model "checkpoints/demo_e200.ckpt" \
   --stride "${STRIDE}" \
-  --downsample 2 \
   --voxel_size "${VOXEL_SIZE}" \
   --max_depth "${MAX_DEPTH}" \
   --depth_scale "${DEPTH_SCALE}" \
-  --lseg_img_long_side "${LSEG_IMG_SIZE}"
+  --lseg_img_long_side "${LSEG_IMG_SIZE}" \
+  --resize_long_side "${RESIZE_LONG_SIDE}"
 popd >/dev/null
 
