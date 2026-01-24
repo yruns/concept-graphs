@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import pickle
 from collections import Counter
 from dataclasses import dataclass, field
@@ -55,6 +56,10 @@ class SceneObject:
     summary: str = ""  # Description
     affordance_category: str = ""  # e.g., "lighting", "seating"
     co_objects: List[str] = field(default_factory=list)  # Related objects
+    
+    # Detection data for visibility scoring
+    image_idx: List[int] = field(default_factory=list)  # View IDs where detected
+    xyxy: List[Any] = field(default_factory=list)  # Bounding boxes per detection
 
 
 @dataclass
@@ -105,8 +110,8 @@ class KeyframeSelector:
         pcd_file: Optional[Path] = None,
         affordance_file: Optional[Path] = None,
         stride: int = 5,
-        llm_url: str = "http://localhost:11434",
-        llm_model: str = "llama3.1:8b",
+        llm_url: Optional[str] = None,
+        llm_model: Optional[str] = None,
     ):
         """Initialize keyframe selector.
         
@@ -115,13 +120,14 @@ class KeyframeSelector:
             pcd_file: Path to .pkl.gz file with 3D objects
             affordance_file: Path to object_affordances.json (optional)
             stride: Frame stride used during mapping
-            llm_url: LLM server URL for query parsing
-            llm_model: LLM model name
+            llm_url: LLM server URL (defaults to LLM_BASE_URL env var)
+            llm_model: LLM model name (defaults to LLM_MODEL env var)
         """
         self.scene_path = Path(scene_path)
         self.stride = stride
-        self.llm_url = llm_url
-        self.llm_model = llm_model
+        # Use environment variables or defaults
+        self.llm_url = llm_url or os.environ.get("LLM_BASE_URL", "http://10.21.231.7:8006")
+        self.llm_model = llm_model or os.environ.get("LLM_MODEL", "gpt-4o-2024-08-06")
         
         # Data containers
         self.objects: List[SceneObject] = []
@@ -256,11 +262,17 @@ class KeyframeSelector:
             else:
                 category = f"object_{i}"
             
+            # Get detection data for visibility scoring
+            image_idx = obj.get('image_idx', [])
+            xyxy = obj.get('xyxy', [])
+            
             scene_obj = SceneObject(
                 obj_id=len(self.objects),
                 category=category,
                 centroid=centroid,
                 clip_feature=clip_ft,
+                image_idx=image_idx,
+                xyxy=xyxy,
             )
             self.objects.append(scene_obj)
         
@@ -417,38 +429,168 @@ class KeyframeSelector:
         )
     
     def _build_visibility_index_online(self) -> None:
-        """Build bidirectional visibility index online (fallback)."""
-        logger.info("Building visibility index online...")
+        """Build bidirectional visibility index online using detection ground truth."""
+        logger.info("Building visibility index online (using detection data)...")
         
+        img_width, img_height = 1200, 680
+        img_area = img_width * img_height
         max_distance = 5.0
-        self.view_to_objects = {i: [] for i in range(len(self.camera_poses))}
+        
+        self.view_to_objects = {}
         
         for obj in self.objects:
-            scores = []
-            for view_id, pose in enumerate(self.camera_poses):
-                cam_pos = pose[:3, 3]
-                distance = np.linalg.norm(obj.centroid - cam_pos)
-                if distance > max_distance:
-                    continue
-                dist_score = max(0, 1 - distance / max_distance)
-                view_dir = (obj.centroid - cam_pos)
-                view_dir = view_dir / (np.linalg.norm(view_dir) + 1e-8)
-                cam_forward = -pose[:3, 2]
-                angle_score = max(0, np.dot(view_dir, cam_forward))
-                combined = 0.6 * dist_score + 0.4 * angle_score
-                if combined > 0.1:
-                    scores.append((view_id, combined))
-                    self.view_to_objects[view_id].append((obj.obj_id, combined))
+            if obj.image_idx:
+                scores = self._compute_visibility_scores(obj, img_width, img_height, img_area, max_distance)
+            else:
+                scores = self._compute_geometric_scores(obj, max_distance)
+            
             scores.sort(key=lambda x: x[1], reverse=True)
             self.object_to_views[obj.obj_id] = scores
+            
+            for view_id, score in scores:
+                if view_id not in self.view_to_objects:
+                    self.view_to_objects[view_id] = []
+                self.view_to_objects[view_id].append((obj.obj_id, score))
         
-        for vid in list(self.view_to_objects.keys()):
-            if self.view_to_objects[vid]:
-                self.view_to_objects[vid].sort(key=lambda x: x[1], reverse=True)
-            else:
-                del self.view_to_objects[vid]
+        for vid in self.view_to_objects:
+            self.view_to_objects[vid].sort(key=lambda x: x[1], reverse=True)
         
         logger.success(f"Built index: {len(self.object_to_views)} objects, {len(self.view_to_objects)} views")
+    
+    def _compute_visibility_scores(self, obj: SceneObject, img_w: int, img_h: int, img_area: int, max_dist: float) -> List[Tuple[int, float]]:
+        """Compute visibility scores using detection data."""
+        scores = []
+        view_indices = {}
+        for i, vid in enumerate(obj.image_idx):
+            view_indices.setdefault(vid, []).append(i)
+        
+        for view_id, indices in view_indices.items():
+            if view_id >= len(self.camera_poses):
+                continue
+            
+            completeness = 0.0
+            for idx in indices:
+                if idx < len(obj.xyxy) and obj.xyxy[idx] is not None:
+                    xyxy = obj.xyxy[idx]
+                    if hasattr(xyxy, '__len__') and len(xyxy) == 4:
+                        x1, y1, x2, y2 = xyxy
+                        bbox_area = (x2 - x1) * (y2 - y1)
+                        size_score = min(1.0, bbox_area / (img_area * 0.3))
+                        is_clipped = x1 < 10 or y1 < 10 or x2 > img_w - 10 or y2 > img_h - 10
+                        completeness = max(completeness, max(0, size_score - (0.3 if is_clipped else 0)))
+            
+            geo = 0.0
+            if not np.allclose(obj.centroid, 0):
+                pose = self.camera_poses[view_id]
+                cam_pos = pose[:3, 3]
+                dist = np.linalg.norm(obj.centroid - cam_pos)
+                if dist <= max_dist:
+                    dist_s = max(0, 1 - dist / max_dist)
+                    view_dir = (obj.centroid - cam_pos) / (np.linalg.norm(obj.centroid - cam_pos) + 1e-8)
+                    angle_s = max(0, np.dot(view_dir, -pose[:3, 2]))
+                    geo = 0.6 * dist_s + 0.4 * angle_s
+            
+            quality = min(1.0, len(indices) / 3.0)
+            scores.append((view_id, 0.5 * completeness + 0.3 * geo + 0.2 * quality))
+        return scores
+    
+    def _compute_geometric_scores(self, obj: SceneObject, max_dist: float) -> List[Tuple[int, float]]:
+        """Fallback: geometric-only scoring."""
+        scores = []
+        for view_id, pose in enumerate(self.camera_poses):
+            cam_pos = pose[:3, 3]
+            dist = np.linalg.norm(obj.centroid - cam_pos)
+            if dist > max_dist:
+                continue
+            dist_s = max(0, 1 - dist / max_dist)
+            view_dir = (obj.centroid - cam_pos) / (np.linalg.norm(obj.centroid - cam_pos) + 1e-8)
+            angle_s = max(0, np.dot(view_dir, -pose[:3, 2]))
+            combined = 0.6 * dist_s + 0.4 * angle_s
+            if combined > 0.1:
+                scores.append((view_id, combined))
+        return scores
+    
+    def _compute_visibility_scores_from_detections(
+        self, obj: SceneObject, img_width: int, img_height: int, img_area: int, max_distance: float
+    ) -> List[Tuple[int, float]]:
+        """Compute visibility scores using detection ground truth."""
+        scores = []
+        
+        # Build view_id -> list of detection indices
+        view_to_indices: Dict[int, List[int]] = {}
+        for i, vid in enumerate(obj.image_idx):
+            if vid not in view_to_indices:
+                view_to_indices[vid] = []
+            view_to_indices[vid].append(i)
+        
+        for view_id, indices in view_to_indices.items():
+            if view_id >= len(self.camera_poses):
+                continue
+            
+            # 1. Completeness score (50% weight)
+            best_completeness = 0.0
+            for idx in indices:
+                if idx < len(obj.xyxy) and obj.xyxy[idx] is not None:
+                    xyxy = obj.xyxy[idx]
+                    if hasattr(xyxy, '__len__') and len(xyxy) == 4:
+                        x1, y1, x2, y2 = xyxy
+                        bbox_w, bbox_h = x2 - x1, y2 - y1
+                        bbox_area = bbox_w * bbox_h
+                        
+                        # Size score
+                        size_score = min(1.0, bbox_area / (img_area * 0.3))
+                        
+                        # Clip penalty
+                        margin = 10
+                        is_clipped = (x1 < margin or y1 < margin or 
+                                     x2 > img_width - margin or y2 > img_height - margin)
+                        clip_penalty = 0.3 if is_clipped else 0.0
+                        
+                        completeness = max(0, size_score - clip_penalty)
+                        best_completeness = max(best_completeness, completeness)
+            
+            # 2. Geometric score (30% weight)
+            geo_score = 0.0
+            if not np.allclose(obj.centroid, 0):
+                pose = self.camera_poses[view_id]
+                cam_pos = pose[:3, 3]
+                distance = np.linalg.norm(obj.centroid - cam_pos)
+                if distance <= max_distance:
+                    dist_score = max(0, 1 - distance / max_distance)
+                    view_dir = (obj.centroid - cam_pos)
+                    view_dir = view_dir / (np.linalg.norm(view_dir) + 1e-8)
+                    cam_forward = -pose[:3, 2]
+                    angle_score = max(0, np.dot(view_dir, cam_forward))
+                    geo_score = 0.6 * dist_score + 0.4 * angle_score
+            
+            # 3. Detection quality (20% weight)
+            quality_score = min(1.0, len(indices) / 3.0)
+            
+            # Combined score
+            combined = 0.5 * best_completeness + 0.3 * geo_score + 0.2 * quality_score
+            scores.append((view_id, float(combined)))
+        
+        return scores
+    
+    def _compute_visibility_scores_geometric(
+        self, obj: SceneObject, max_distance: float
+    ) -> List[Tuple[int, float]]:
+        """Fallback: compute visibility using only geometric scoring."""
+        scores = []
+        for view_id, pose in enumerate(self.camera_poses):
+            cam_pos = pose[:3, 3]
+            distance = np.linalg.norm(obj.centroid - cam_pos)
+            if distance > max_distance:
+                continue
+            dist_score = max(0, 1 - distance / max_distance)
+            view_dir = (obj.centroid - cam_pos)
+            view_dir = view_dir / (np.linalg.norm(view_dir) + 1e-8)
+            cam_forward = -pose[:3, 2]
+            angle_score = max(0, np.dot(view_dir, cam_forward))
+            combined = 0.6 * dist_score + 0.4 * angle_score
+            if combined > 0.1:
+                scores.append((view_id, combined))
+        return scores
     
     def _load_clip_model(self) -> None:
         """Load CLIP model for text encoding."""
@@ -528,57 +670,43 @@ class KeyframeSelector:
     
     def _parse_with_llm(self, query: str) -> Tuple[str, Optional[str], Optional[str]]:
         """Parse query using LLM with scene category context."""
-        import requests
+        from conceptgraph.llava.unified_client import chat_completions
         
         category_list = ", ".join(sorted(set(self.scene_categories)))
+        logger.info(f"[LLM] Calling {self.llm_model} at {self.llm_url} for query parsing...")
         
-        prompt = f'''Parse this query to find objects in a 3D scene.
+        prompt = f'''You are a query parser. Parse this query and return ONLY a JSON object, no explanation.
 
-**Scene contains these objects:** [{category_list}]
+Scene objects: [{category_list}]
 
 Query: "{query}"
 
-RULES:
-1. "target" = the MAIN object to find (the one being searched for)
-2. "anchor" = a REFERENCE object used for spatial context (if any)
-3. For "X on/near/beside Y": target=X, anchor=Y
-4. Map synonyms to scene labels: pillow→throw_pillow, couch→sofa, lamp→table_lamp
-5. If no spatial relation, anchor and relation are null
+Rules:
+- target = main object being searched for
+- anchor = reference object for spatial context (null if none)
+- relation = spatial relation like on/near/beside/under (null if none)
+- Map synonyms: pillow→throw_pillow, couch→sofa, lamp→table_lamp, table→side_table
 
 Examples:
-- "the pillow on the sofa" → {{"target": "throw_pillow", "anchor": "sofa", "relation": "on"}}
-- "lamp near the couch" → {{"target": "table_lamp", "anchor": "sofa", "relation": "near"}}
-- "red chair" → {{"target": "chair", "anchor": null, "relation": null}}
-- "ottoman" → {{"target": "ottoman", "anchor": null, "relation": null}}
+"pillow on the sofa" → {{"target":"throw_pillow","anchor":"sofa","relation":"on"}}
+"lamp near table" → {{"target":"table_lamp","anchor":"side_table","relation":"near"}}
+"ottoman" → {{"target":"ottoman","anchor":null,"relation":null}}
 
-Return ONLY JSON:
-{{"target": "<main object to find>", "anchor": "<reference object or null>", "relation": "<on/near/beside/under or null>"}}
-'''
+RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         
-        # Try Ollama/OpenAI compatible API
-        try:
-            r = requests.post(
-                f"{self.llm_url}/v1/chat/completions",
-                json={"model": self.llm_model, "messages": [{"role": "user", "content": prompt}]},
-                timeout=30
-            )
-            if r.ok:
-                response = r.json()["choices"][0]["message"]["content"]
-            else:
-                raise Exception("API failed")
-        except:
-            # Try Ollama native API
-            r = requests.post(
-                f"{self.llm_url}/api/generate",
-                json={"model": self.llm_model, "prompt": prompt, "stream": False},
-                timeout=30
-            )
-            if r.ok:
-                response = r.json().get("response", "")
-            else:
-                raise Exception("LLM unavailable")
+        # Use unified_client for LLM call
+        result = chat_completions(
+            messages=[{"role": "user", "content": prompt}],
+            model=self.llm_model,
+            base_url=self.llm_url,
+            temperature=0.0,
+            max_tokens=256,
+            timeout=30.0,
+        )
+        response = result["choices"][0]["message"]["content"]
         
         # Parse JSON from response
+        logger.debug(f"[LLM] Raw response: {response[:200]}...")
         import re
         match = re.search(r'\{[^{}]+\}', response, re.DOTALL)
         if match:
@@ -595,6 +723,7 @@ Return ONLY JSON:
                     relation = None
                 
                 if target:
+                    logger.success(f"[LLM] Parsed: target='{target}', anchor='{anchor}', relation='{relation}'")
                     return (target, anchor, relation)
             except json.JSONDecodeError as e:
                 logger.warning(f"JSON parse error: {e}")
