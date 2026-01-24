@@ -60,119 +60,22 @@ if [ ! -f "$INDEX_FILE" ]; then
     echo ""
 fi
 
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
+# Build command
+CMD="python -m conceptgraph.query_scene.examples.query_keyframes \
+    --scene_path ${SCENE_PATH} \
+    --query \"${QUERY}\" \
+    --k ${K} \
+    --output_dir ${OUTPUT_DIR}"
 
-# Show the Python command that will be executed
 echo ""
-echo "Executing Python command:"
+echo "Executing:"
 echo "----------------------------------------"
-cat << 'SHOWCMD'
-python << 'PYEOF'
-from pathlib import Path
-from conceptgraph.query_scene.keyframe_selector import KeyframeSelector
-from loguru import logger
-import cv2
-import numpy as np
-import os
-
-# Load scene
-scene_path = Path(os.environ['SCENE_PATH'])
-output_dir = Path(os.environ['OUTPUT_DIR'])
-query = os.environ['QUERY']
-k = int(os.environ['K'])
-
-selector = KeyframeSelector.from_scene_path(scene_path)
-
-# Run query
-logger.info(f'Running query: {query}')
-result = selector.select_keyframes(query, k=k)
-
-# Print results
-print()
-print('=' * 50)
-print(f'Query: {query}')
-print(f'Target: {result.target_term} -> {len(result.target_objects)} objects')
-if result.anchor_term:
-    print(f'Anchor: {result.anchor_term} -> {len(result.anchor_objects)} objects')
-print(f'Selected keyframes: {result.keyframe_indices}')
-print('=' * 50)
-
-# Save visualization
-if result.keyframe_paths:
-    images = []
-    for i, (idx, path) in enumerate(zip(result.keyframe_indices, result.keyframe_paths)):
-        if path.exists():
-            img = cv2.imread(str(path))
-            cv2.putText(img, f'View {idx} (rank {i+1})', (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            images.append(img)
-    
-    if images:
-        combined = np.hstack(images[:5])
-        safe_name = query.replace(' ', '_')[:30]
-        out_path = output_dir / f'{safe_name}.jpg'
-        cv2.imwrite(str(out_path), combined)
-        print(f'Saved: {out_path}')
-PYEOF
-SHOWCMD
+echo "$CMD"
 echo "----------------------------------------"
 echo ""
 
-# Export variables for Python
-export SCENE_PATH
-export OUTPUT_DIR
-export QUERY
-export K
-
-# Run Python
-python << 'PYEOF'
-from pathlib import Path
-from conceptgraph.query_scene.keyframe_selector import KeyframeSelector
-from loguru import logger
-import cv2
-import numpy as np
-import os
-
-# Load scene
-scene_path = Path(os.environ['SCENE_PATH'])
-output_dir = Path(os.environ['OUTPUT_DIR'])
-query = os.environ['QUERY']
-k = int(os.environ['K'])
-
-selector = KeyframeSelector.from_scene_path(scene_path)
-
-# Run query
-logger.info(f'Running query: {query}')
-result = selector.select_keyframes(query, k=k)
-
-# Print results
-print()
-print('=' * 50)
-print(f'Query: {query}')
-print(f'Target: {result.target_term} -> {len(result.target_objects)} objects')
-if result.anchor_term:
-    print(f'Anchor: {result.anchor_term} -> {len(result.anchor_objects)} objects')
-print(f'Selected keyframes: {result.keyframe_indices}')
-print('=' * 50)
-
-# Save visualization
-if result.keyframe_paths:
-    images = []
-    for i, (idx, path) in enumerate(zip(result.keyframe_indices, result.keyframe_paths)):
-        if path.exists():
-            img = cv2.imread(str(path))
-            cv2.putText(img, f'View {idx} (rank {i+1})', (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            images.append(img)
-    
-    if images:
-        combined = np.hstack(images[:5])
-        safe_name = query.replace(' ', '_')[:30]
-        out_path = output_dir / f'{safe_name}.jpg'
-        cv2.imwrite(str(out_path), combined)
-        print(f'Saved: {out_path}')
-PYEOF
+# Run
+eval $CMD
 
 echo ""
 echo "========================================"
