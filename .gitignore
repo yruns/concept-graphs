@@ -16,6 +16,7 @@ __pycache__/
 *$py.class
 
 *.zip
+*.ckpt
 
 # C extensions
 *.so

@@ -25,11 +25,11 @@
 ################################################################################
 
 # 配置
-LSEG_PROJECT_DIR="/home/shyue/codebase/lseg_feature_extraction"
-CONCEPT_GRAPH_DIR="/home/shyue/codebase/concept-graphs"
 STRIDE=8
 VOXEL_SIZE=0.025  # 2.5cm 体素大小 (与 ConceptGraphs 一致)
 LSEG_IMG_SIZE=640  # LSeg 输入图像长边 (越小越快，默认 480)
+MAX_DEPTH=10.0
+DEPTH_SCALE=6553.5
 
 # 激活 lseg 环境
 source /home/shyue/anaconda3/bin/activate lseg
@@ -39,7 +39,13 @@ source /home/shyue/codebase/concept-graphs/env_vars.bash
 
 # 场景设置
 SCENE_NAME=${1:-room0}
-OUTPUT_FILE=${2:-"dense_pcd_lseg.npz"}
+OUTPUT_DIR=${2:-""}
+OUTPUT_PATH=""
+if [[ -n "${OUTPUT_DIR}" ]]; then
+  OUTPUT_PATH="${OUTPUT_DIR}/dense_pcd_lseg.npz"
+else
+  OUTPUT_PATH="${REPLICA_ROOT}/${SCENE_NAME}/dense_pcd_lseg.npz"
+fi
 
 echo "================================================"
 echo "步骤 2.5b: 生成全场景稠密点云 + LSeg 特征"
@@ -47,6 +53,7 @@ echo "================================================"
 echo "场景: ${SCENE_NAME}"
 echo "Stride: ${STRIDE}"
 echo "体素大小: ${VOXEL_SIZE}m"
+echo "最大深度: ${MAX_DEPTH}m"
 echo "LSeg 图像尺寸: ${LSEG_IMG_SIZE}px"
 echo ""
 echo "输入数据:"
@@ -54,45 +61,21 @@ echo "  - RGB: ${REPLICA_ROOT}/${SCENE_NAME}/results/frame*.jpg"
 echo "  - Depth: ${REPLICA_ROOT}/${SCENE_NAME}/results/depth*.png"
 echo "  - Poses: ${REPLICA_ROOT}/${SCENE_NAME}/traj.txt"
 echo ""
-echo "输出: ${REPLICA_ROOT}/${SCENE_NAME}/${OUTPUT_FILE}"
+echo "输出: ${OUTPUT_PATH}"
 echo "================================================"
 echo ""
 
-# 进入 lseg 项目目录
-cd "${LSEG_PROJECT_DIR}"
+# 运行 LSeg 融合（切到 LSeg 目录以确保 data/ 路径正确）
+pushd "${CG_FOLDER}/lseg_feature_extraction" >/dev/null
+python fusion_replica.py \
+  --scene_path "${REPLICA_ROOT}/${SCENE_NAME}" \
+  --output_path "${OUTPUT_PATH}" \
+  --lseg_model "checkpoints/demo_e200.ckpt" \
+  --stride "${STRIDE}" \
+  --downsample 2 \
+  --voxel_size "${VOXEL_SIZE}" \
+  --max_depth "${MAX_DEPTH}" \
+  --depth_scale "${DEPTH_SCALE}" \
+  --lseg_img_long_side "${LSEG_IMG_SIZE}"
+popd >/dev/null
 
-# 运行稠密点云生成
-python "${CONCEPT_GRAPH_DIR}/conceptgraph/slam/fuse_lseg_dense_pointcloud.py" \
-    --scene_path "${REPLICA_ROOT}/${SCENE_NAME}" \
-    --output_file "${OUTPUT_FILE}" \
-    --stride ${STRIDE} \
-    --voxel_size ${VOXEL_SIZE} \
-    --lseg_img_size ${LSEG_IMG_SIZE}
-
-if [ $? -eq 0 ]; then
-    echo ""
-    echo "✓ 全场景稠密点云生成完成"
-    echo ""
-    
-    OUTPUT_PATH="${REPLICA_ROOT}/${SCENE_NAME}/${OUTPUT_FILE}"
-    if [ -f "${OUTPUT_PATH}" ]; then
-        FILE_SIZE=$(du -h "${OUTPUT_PATH}" | cut -f1)
-        echo "输出文件: ${OUTPUT_PATH}"
-        echo "文件大小: ${FILE_SIZE}"
-        
-        # 显示点云信息
-        python3 -c "
-import numpy as np
-data = np.load('${OUTPUT_PATH}', allow_pickle=True)
-print(f'点数: {len(data[\"points\"]):,}')
-print(f'点云形状: {data[\"points\"].shape}')
-print(f'LSeg 特征形状: {data[\"lseg_features\"].shape}')
-print(f'颜色形状: {data[\"colors\"].shape}')
-"
-    fi
-    echo ""
-else
-    echo ""
-    echo "✗ 稠密点云生成失败"
-    exit 1
-fi
