@@ -280,12 +280,8 @@ class LSegFeatureExtractor:
         
         if self._clip_model is None:
             # Load CLIP for text encoding
-            try:
-                import clip
-                self._clip_model, _ = clip.load("ViT-L/14", device=self.device)
-            except:
-                import clip
-                self._clip_model, _ = clip.load("ViT-B/16", device=self.device)
+            import clip
+            self._clip_model, _ = clip.load("ViT-B/32", device=self.device)
             self._clip_model.eval()
         
         import clip
