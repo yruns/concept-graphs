@@ -475,13 +475,23 @@ class QueryExecutor:
                 values.append(min_dist)
             
             elif metric == "size":
-                # Use bounding box volume or point count
+                # Use bounding box volume (not point count)
                 if hasattr(cand, 'bbox_3d') and cand.bbox_3d is not None:
                     size = np.prod(cand.bbox_3d.size)
-                elif hasattr(cand, 'n_points'):
-                    size = cand.n_points
+                elif hasattr(cand, 'pcd_np') and cand.pcd_np is not None and len(cand.pcd_np) > 0:
+                    # Compute volume from point cloud bounding box
+                    pts = np.asarray(cand.pcd_np)
+                    bbox_size = pts.max(axis=0) - pts.min(axis=0)
+                    size = np.prod(bbox_size)
+                elif hasattr(cand, 'point_cloud') and cand.point_cloud is not None:
+                    pts = np.asarray(cand.point_cloud)
+                    if len(pts) > 0:
+                        bbox_size = pts.max(axis=0) - pts.min(axis=0)
+                        size = np.prod(bbox_size)
+                    else:
+                        size = 0.0
                 else:
-                    size = 1.0
+                    size = 0.0
                 values.append(size)
             
             elif metric == "height":

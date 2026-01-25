@@ -27,6 +27,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from loguru import logger
+from conceptgraph.query_scene.keyframe_selector import SceneObject
 
 logger.remove()
 logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level:7} | {message}")
@@ -42,21 +43,6 @@ COLORS = {
     'green': (50, 255, 100),       # After select constraint
     'red': (255, 50, 50),          # Final result
 }
-
-
-@dataclass
-class MockSceneObject:
-    """Mock scene object for testing."""
-    obj_id: int
-    category: str
-    object_tag: str
-    centroid: np.ndarray
-    n_points: int
-    pcd_np: Optional[np.ndarray] = None
-    pcd_color_np: Optional[np.ndarray] = None
-    image_idx: Optional[List[int]] = None
-    bbox_3d: Optional[Any] = None
-    summary: str = ""
 
 
 @dataclass
@@ -76,8 +62,12 @@ class QueryVisualization:
     final_ids: Set[int] = field(default_factory=set)
 
 
-def load_scene_objects(scene_path: str) -> Tuple[List[MockSceneObject], Dict]:
-    """Load scene objects from pkl.gz file."""
+def load_scene_objects(scene_path: str) -> Tuple[List[SceneObject], Dict]:
+    """Load scene objects from pkl.gz file.
+    
+    Uses SceneObject.from_dict() to create objects with all attributes
+    from the pkl.gz file (output of 2b_build_3d_object_map_detect.sh).
+    """
     pcd_dir = Path(scene_path) / "pcd_saves"
     
     pkl_files = list(pcd_dir.glob("*ram_withbg*_post.pkl.gz"))
@@ -105,39 +95,8 @@ def load_scene_objects(scene_path: str) -> Tuple[List[MockSceneObject], Dict]:
             continue
         
         try:
-            pcd_np = None
-            pcd_color_np = None
-            centroid = np.zeros(3)
-            
-            if 'pcd_np' in obj_dict and obj_dict['pcd_np'] is not None:
-                pcd_np = np.array(obj_dict['pcd_np'])
-                if len(pcd_np) > 0:
-                    centroid = pcd_np.mean(axis=0)
-            
-            if 'pcd_color_np' in obj_dict and obj_dict['pcd_color_np'] is not None:
-                pcd_color_np = np.array(obj_dict['pcd_color_np'])
-            
-            class_names = obj_dict.get('class_name', ['unknown'])
-            if isinstance(class_names, list) and class_names:
-                class_name = Counter(class_names).most_common(1)[0][0]
-            else:
-                class_name = str(class_names) if class_names else 'unknown'
-            
-            image_idx = obj_dict.get('image_idx', [])
-            n_points = obj_dict.get('n_points', 0)
-            if isinstance(n_points, list):
-                n_points = max(n_points) if n_points else 0
-            
-            objects.append(MockSceneObject(
-                obj_id=i,
-                category=class_name,
-                object_tag=class_name,
-                centroid=centroid,
-                n_points=n_points,
-                pcd_np=pcd_np,
-                pcd_color_np=pcd_color_np,
-                image_idx=image_idx,
-            ))
+            obj = SceneObject.from_dict(obj_id=i, data=obj_dict)
+            objects.append(obj)
         except Exception as e:
             logger.warning(f"Failed to load object {i}: {e}")
     
@@ -146,7 +105,7 @@ def load_scene_objects(scene_path: str) -> Tuple[List[MockSceneObject], Dict]:
 
 
 def save_ply_with_colors(
-    objects: List[MockSceneObject],
+    objects: List[SceneObject],
     color_map: Dict[int, Tuple[int, int, int]],
     output_path: Path,
     default_color: Tuple[int, int, int] = (50, 50, 50),
@@ -194,7 +153,7 @@ def save_ply_with_colors(
 
 
 def save_filtering_steps(
-    objects: List[MockSceneObject],
+    objects: List[SceneObject],
     vis: QueryVisualization,
     output_dir: Path,
 ):
@@ -250,7 +209,7 @@ def save_filtering_steps(
 
 
 def save_keyframes(
-    objects: List[MockSceneObject],
+    objects: List[SceneObject],
     matched_ids: Set[int],
     scene_path: Path,
     output_dir: Path,
@@ -295,7 +254,7 @@ def save_keyframes(
 
 def execute_with_tracking(
     query_result,
-    objects: List[MockSceneObject],
+    objects: List[SceneObject],
 ) -> Tuple[Any, QueryVisualization]:
     """Execute query and track filtering steps."""
     from conceptgraph.query_scene.query_executor import QueryExecutor
@@ -391,7 +350,7 @@ def execute_with_tracking(
 
 def run_e2e_test(
     query: str,
-    objects: List[MockSceneObject],
+    objects: List[SceneObject],
     scene_categories: List[str],
     scene_path: Path,
     output_base_dir: Path,

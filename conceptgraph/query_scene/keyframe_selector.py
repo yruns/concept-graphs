@@ -54,22 +54,106 @@ from .spatial_relations import SpatialRelationChecker, check_relation
 
 @dataclass
 class SceneObject:
-    """Lightweight object representation for keyframe selection."""
+    """Scene object representation with all attributes from pkl.gz file.
     
+    Attributes are based on the output of:
+    - 1b_extract_2d_segmentation_detect.sh (2D segmentation)
+    - 2b_build_3d_object_map_detect.sh (3D object map)
+    """
+    
+    # Core identification
     obj_id: int
-    category: str  # e.g., "table_lamp", "ottoman"
-    centroid: np.ndarray  # 3D position [x, y, z]
-    clip_feature: Optional[np.ndarray] = None  # CLIP visual feature
+    category: str  # Primary category (most common from class_name list)
+    object_tag: str = ""  # Display tag (same as category if not specified)
+    centroid: Optional[np.ndarray] = None  # 3D position [x, y, z], computed from pcd_np
     
-    # Optional rich information from affordance extraction
-    object_tag: str = ""  # Refined tag e.g., "throw_pillow"
+    # 3D point cloud data
+    pcd_np: Optional[np.ndarray] = None  # Point cloud (N, 3)
+    pcd_color_np: Optional[np.ndarray] = None  # Point colors (N, 3)
+    bbox_np: Optional[np.ndarray] = None  # 3D bounding box corners (8, 3)
+    
+    # CLIP features
+    clip_ft: Optional[np.ndarray] = None  # CLIP visual feature (1024,)
+    text_ft: Optional[np.ndarray] = None  # CLIP text feature (1024,)
+    
+    # Detection data (per-frame lists)
+    image_idx: List[int] = field(default_factory=list)  # Frame indices where detected
+    mask_idx: List[int] = field(default_factory=list)  # Mask index per frame
+    class_name: List[str] = field(default_factory=list)  # Class name per detection
+    class_id: List[int] = field(default_factory=list)  # Class ID per detection
+    conf: List[float] = field(default_factory=list)  # Detection confidence
+    xyxy: List[Any] = field(default_factory=list)  # 2D bounding boxes
+    n_points: List[int] = field(default_factory=list)  # Points per detection
+    pixel_area: List[int] = field(default_factory=list)  # Pixel area per detection
+    
+    # Metadata
+    num_detections: int = 0  # Total detection count
+    inst_color: Optional[np.ndarray] = None  # Instance color (3,)
+    is_background: bool = False
+    
+    # Optional rich information (from affordance extraction)
     summary: str = ""  # Description
     affordance_category: str = ""  # e.g., "lighting", "seating"
     co_objects: List[str] = field(default_factory=list)  # Related objects
     
-    # Detection data for visibility scoring
-    image_idx: List[int] = field(default_factory=list)  # View IDs where detected
-    xyxy: List[Any] = field(default_factory=list)  # Bounding boxes per detection
+    # Alias for backward compatibility
+    @property
+    def clip_feature(self) -> Optional[np.ndarray]:
+        return self.clip_ft
+    
+    @property
+    def point_cloud(self) -> Optional[np.ndarray]:
+        return self.pcd_np
+    
+    @classmethod
+    def from_dict(cls, obj_id: int, data: Dict[str, Any]) -> "SceneObject":
+        """Create SceneObject from raw pkl.gz dict data."""
+        from collections import Counter
+        
+        # Extract category (most common class_name)
+        class_names = data.get('class_name', [])
+        if class_names:
+            valid_names = [n for n in class_names if n and str(n).lower() not in ('item', 'none', '')]
+            if valid_names:
+                category = Counter(valid_names).most_common(1)[0][0]
+            else:
+                category = class_names[0] if class_names else f"object_{obj_id}"
+        else:
+            category = f"object_{obj_id}"
+        
+        # Get point cloud and compute centroid
+        pcd_np = data.get('pcd_np')
+        centroid = None
+        if pcd_np is not None and len(pcd_np) > 0:
+            pcd_np = np.asarray(pcd_np)
+            centroid = pcd_np.mean(axis=0)
+        
+        return cls(
+            obj_id=obj_id,
+            category=category,
+            object_tag=category,
+            centroid=centroid,
+            # 3D data
+            pcd_np=pcd_np,
+            pcd_color_np=np.asarray(data['pcd_color_np']) if data.get('pcd_color_np') is not None else None,
+            bbox_np=np.asarray(data['bbox_np']) if data.get('bbox_np') is not None else None,
+            # Features
+            clip_ft=np.asarray(data['clip_ft']) if data.get('clip_ft') is not None else None,
+            text_ft=np.asarray(data['text_ft']) if data.get('text_ft') is not None else None,
+            # Detection data
+            image_idx=list(data.get('image_idx', [])),
+            mask_idx=list(data.get('mask_idx', [])),
+            class_name=list(data.get('class_name', [])),
+            class_id=list(data.get('class_id', [])),
+            conf=list(data.get('conf', [])),
+            xyxy=list(data.get('xyxy', [])),
+            n_points=list(data.get('n_points', [])),
+            pixel_area=list(data.get('pixel_area', [])),
+            # Metadata
+            num_detections=data.get('num_detections', 0),
+            inst_color=np.asarray(data['inst_color']) if data.get('inst_color') is not None else None,
+            is_background=bool(data.get('is_background', False)),
+        )
 
 
 @dataclass
