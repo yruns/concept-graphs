@@ -1,0 +1,227 @@
+[
+  {
+    "query": "the pillow on the armchair",
+    "test_name": "1. Simple spatial (ON)",
+    "parse_success": true,
+    "execute_success": true,
+    "matched_objects": [
+      {
+        "id": 38,
+        "tag": "pillow",
+        "position": [
+          5.804893545239314,
+          0.4637894541737836,
+          -0.8468294836404121
+        ]
+      }
+    ],
+    "errors": [],
+    "ply_path": "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair.ply",
+    "keyframe_paths": [
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_keyframes/obj38_pillow_keyframe0_000125.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_keyframes/obj38_pillow_keyframe2_000127.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_keyframes/obj38_pillow_keyframe1_000126.jpg"
+    ],
+    "parsed_query": {
+      "raw_query": "the pillow on the armchair",
+      "root": {
+        "category": "pillow",
+        "attributes": [],
+        "spatial_constraints": [
+          {
+            "relation": "on",
+            "anchors": [
+              {
+                "category": "armchair",
+                "attributes": [],
+                "spatial_constraints": [],
+                "select_constraint": null,
+                "node_id": "root_sc0_a0"
+              }
+            ]
+          }
+        ],
+        "select_constraint": null,
+        "node_id": "root"
+      },
+      "expect_unique": true
+    }
+  },
+  {
+    "query": "the lamp on the table near the window",
+    "test_name": "2. Nested spatial (ON + NEAR)",
+    "parse_success": true,
+    "execute_success": true,
+    "matched_objects": [
+      {
+        "id": 0,
+        "tag": "lamp",
+        "position": [
+          2.282691751994571,
+          -0.722044595845897,
+          -0.25910596551979376
+        ]
+      }
+    ],
+    "errors": [],
+    "ply_path": "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_lamp_on_the_table_near_the_window.ply",
+    "keyframe_paths": [
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_lamp_on_the_table_near_the_window_keyframes/obj0_lamp_keyframe2_000068.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_lamp_on_the_table_near_the_window_keyframes/obj0_lamp_keyframe0_000066.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_lamp_on_the_table_near_the_window_keyframes/obj0_lamp_keyframe1_000067.jpg"
+    ],
+    "parsed_query": {
+      "raw_query": "the lamp on the table near the window",
+      "root": {
+        "category": "lamp",
+        "attributes": [],
+        "spatial_constraints": [
+          {
+            "relation": "on",
+            "anchors": [
+              {
+                "category": "table",
+                "attributes": [],
+                "spatial_constraints": [],
+                "select_constraint": null,
+                "node_id": "root_sc0_a0"
+              }
+            ]
+          }
+        ],
+        "select_constraint": null,
+        "node_id": "root"
+      },
+      "expect_unique": true
+    }
+  },
+  {
+    "query": "the largest pillow",
+    "test_name": "3. Superlative (SIZE)",
+    "parse_success": true,
+    "execute_success": true,
+    "matched_objects": [
+      {
+        "id": 26,
+        "tag": "pillow",
+        "position": [
+          3.5735072627509634,
+          -0.3407675843666577,
+          -0.9337631300034588
+        ]
+      }
+    ],
+    "errors": [],
+    "ply_path": "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_largest_pillow.ply",
+    "keyframe_paths": [
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_largest_pillow_keyframes/obj26_pillow_keyframe0_000296.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_largest_pillow_keyframes/obj26_pillow_keyframe1_000350.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_largest_pillow_keyframes/obj26_pillow_keyframe2_000116.jpg"
+    ],
+    "parsed_query": {
+      "raw_query": "the largest pillow",
+      "root": {
+        "category": "pillow",
+        "attributes": [],
+        "spatial_constraints": [],
+        "select_constraint": {
+          "constraint_type": "superlative",
+          "metric": "size",
+          "order": "max",
+          "reference": null,
+          "position": null
+        },
+        "node_id": "root"
+      },
+      "expect_unique": true
+    }
+  },
+  {
+    "query": "the second stool from the left",
+    "test_name": "4. Ordinal (POSITION)",
+    "parse_success": true,
+    "execute_success": true,
+    "matched_objects": [
+      {
+        "id": 5,
+        "tag": "stool",
+        "position": [
+          1.859625805611393,
+          1.483282787790827,
+          -1.1264874529624647
+        ]
+      }
+    ],
+    "errors": [],
+    "ply_path": "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_second_stool_from_the_left.ply",
+    "keyframe_paths": [
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_second_stool_from_the_left_keyframes/obj5_stool_keyframe0_000068.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_second_stool_from_the_left_keyframes/obj5_stool_keyframe1_000067.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_second_stool_from_the_left_keyframes/obj5_stool_keyframe2_000000.jpg"
+    ],
+    "parsed_query": {
+      "raw_query": "the second stool from the left",
+      "root": {
+        "category": "stool",
+        "attributes": [],
+        "spatial_constraints": [],
+        "select_constraint": {
+          "constraint_type": "ordinal",
+          "metric": "x_position",
+          "order": "asc",
+          "reference": null,
+          "position": 2
+        },
+        "node_id": "root"
+      },
+      "expect_unique": true
+    }
+  },
+  {
+    "query": "the pillow on the armchair nearest the door",
+    "test_name": "5. Complex (SPATIAL + SUPERLATIVE)",
+    "parse_success": true,
+    "execute_success": true,
+    "matched_objects": [
+      {
+        "id": 36,
+        "tag": "armchair",
+        "position": [
+          5.630932157405855,
+          0.5281175300299014,
+          -0.8855439396775691
+        ]
+      }
+    ],
+    "errors": [],
+    "ply_path": "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_nearest_the_d.ply",
+    "keyframe_paths": [
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_nearest_the_d_keyframes/obj36_armchair_keyframe0_000226.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_nearest_the_d_keyframes/obj36_armchair_keyframe1_000237.jpg",
+      "/home/shyue/codebase/concept-graphs/room0/query_visualizations/the_pillow_on_the_armchair_nearest_the_d_keyframes/obj36_armchair_keyframe2_000244.jpg"
+    ],
+    "parsed_query": {
+      "raw_query": "the pillow on the armchair nearest the door",
+      "root": {
+        "category": "armchair",
+        "attributes": [],
+        "spatial_constraints": [],
+        "select_constraint": {
+          "constraint_type": "superlative",
+          "metric": "distance",
+          "order": "min",
+          "reference": {
+            "category": "door",
+            "attributes": [],
+            "spatial_constraints": [],
+            "select_constraint": null,
+            "node_id": "root_sel_ref"
+          },
+          "position": null
+        },
+        "node_id": "root"
+      },
+      "expect_unique": true
+    }
+  }
+]

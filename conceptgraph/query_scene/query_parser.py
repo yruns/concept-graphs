@@ -350,20 +350,15 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
         """
         Fallback parsing when LLM fails.
         
-        Creates a simple query with the entire query as the category.
+        Uses SimpleQueryParser for rule-based parsing.
         """
-        # Try to extract at least the first noun as category
-        words = query.lower().replace("the ", "").replace("a ", "").split()
-        category = words[0] if words else "object"
+        simple_parser = SimpleQueryParser(scene_categories=self.scene_categories)
+        result = simple_parser.parse(query)
         
-        return GroundingQuery(
-            raw_query=query,
-            root=QueryNode(
-                category=category,
-                node_id="root"
-            ),
-            expect_unique=query.lower().startswith("the ")
-        )
+        # Assign node IDs
+        self._assign_node_ids(result.root, "root")
+        
+        return result
     
     def parse_batch(self, queries: List[str]) -> List[GroundingQuery]:
         """

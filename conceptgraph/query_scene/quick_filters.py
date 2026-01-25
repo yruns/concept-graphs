@@ -54,8 +54,24 @@ class FilterConfig:
 
 
 # Pre-defined quick filters for common spatial relations
+# 
+# NOTE: Only VIEW-INDEPENDENT relations are included here!
+# View-dependent relations (left_of, right_of, in_front_of, behind) 
+# require knowing the observer's viewpoint and cannot be filtered
+# using simple world-coordinate comparisons.
+#
+# View-independent relations:
+# - Vertical (Z-axis): on, above, below - gravity defines "up"
+# - Distance: near, far - independent of viewing angle
+#
+# View-dependent relations (NOT included):
+# - left_of, right_of: depend on observer's facing direction
+# - in_front_of, behind: depend on observer's position
+# - These will be handled by full spatial reasoning, not quick filters
+#
 QUICK_FILTER_CONFIGS: Dict[str, FilterConfig] = {
-    # Vertical relations (Z-axis)
+    # ========== VIEW-INDEPENDENT: Vertical relations (Z-axis) ==========
+    # These are safe because gravity defines "up" universally
     "on_top_of": FilterConfig(
         filter_type=FilterType.VERTICAL,
         comparator="gt",
@@ -99,39 +115,8 @@ QUICK_FILTER_CONFIGS: Dict[str, FilterConfig] = {
         loose_factor=1.0,
     ),
     
-    # Horizontal relations (X-axis, assuming +X is right)
-    "left_of": FilterConfig(
-        filter_type=FilterType.HORIZONTAL,
-        comparator="lt",
-        axis="x",
-        threshold=-0.1,
-        loose_factor=1.0,
-    ),
-    "right_of": FilterConfig(
-        filter_type=FilterType.HORIZONTAL,
-        comparator="gt",
-        axis="x",
-        threshold=0.1,
-        loose_factor=1.0,
-    ),
-    
-    # Horizontal relations (Y-axis, assuming +Y is forward)
-    "in_front_of": FilterConfig(
-        filter_type=FilterType.HORIZONTAL,
-        comparator="gt",
-        axis="y",
-        threshold=0.1,
-        loose_factor=1.0,
-    ),
-    "behind": FilterConfig(
-        filter_type=FilterType.HORIZONTAL,
-        comparator="lt",
-        axis="y",
-        threshold=-0.1,
-        loose_factor=1.0,
-    ),
-    
-    # Distance relations
+    # ========== VIEW-INDEPENDENT: Distance relations ==========
+    # These are safe because Euclidean distance is view-independent
     "near": FilterConfig(
         filter_type=FilterType.DISTANCE,
         comparator="lt",
@@ -167,24 +152,30 @@ QUICK_FILTER_CONFIGS: Dict[str, FilterConfig] = {
         threshold=3.0,
         loose_factor=0.7,  # Tighter for "far"
     ),
+    
+    # ========== VIEW-DEPENDENT relations are NOT included ==========
+    # left_of, right_of, in_front_of, behind
+    # These require viewpoint information and will use full spatial reasoning
 }
 
 # Relation aliases to canonical names
+# NOTE: Only includes view-independent relations
 FILTER_ALIASES: Dict[str, str] = {
+    # Vertical (view-independent)
     "on": "on_top_of",
     "upon": "on_top_of",
     "atop": "on_top_of",
     "over": "above",
     "beneath": "below",
     "underneath": "below",
-    "left": "left_of",
-    "right": "right_of",
-    "front": "in_front_of",
-    "back": "behind",
-    "back_of": "behind",
+    
+    # Distance (view-independent)
     "nearby": "near",
     "adjacent": "next_to",
     "adjacent_to": "next_to",
+    
+    # View-dependent relations are NOT aliased here
+    # left, right, front, back will not have quick filters
 }
 
 # Common color keywords (for attribute filtering)

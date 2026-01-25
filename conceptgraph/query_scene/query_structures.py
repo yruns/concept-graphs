@@ -50,51 +50,62 @@ class ConstraintType(str, Enum):
 
 class SpatialRelation(str, Enum):
     """
-    Predefined spatial relations that support quick coordinate-based filtering.
+    Predefined spatial relations for scene understanding.
     
-    These relations are specifically chosen because they can be evaluated
-    using simple coordinate comparisons:
+    Relations are categorized by whether they support quick coordinate-based filtering:
     
-    Vertical Relations (Z-axis):
+    VIEW-INDEPENDENT (supports quick filtering):
+    =============================================
+    These relations can be evaluated using simple coordinate comparisons
+    because they don't depend on the observer's viewpoint.
+    
+    Vertical Relations (Z-axis) - gravity defines "up":
     - ON: target.z > anchor.z (target is on top of anchor)
     - ABOVE: target.z > anchor.z (target is above anchor)
     - BELOW: target.z < anchor.z (target is below anchor)
     
-    Horizontal Relations (X-axis):
-    - LEFT_OF: target.x < anchor.x
-    - RIGHT_OF: target.x > anchor.x
-    
-    Horizontal Relations (Y-axis):
-    - IN_FRONT_OF: target.y > anchor.y (depends on coordinate system)
-    - BEHIND: target.y < anchor.y
-    
-    Distance Relations:
+    Distance Relations - Euclidean distance is view-independent:
     - NEAR: distance(target, anchor) < threshold
     - NEXT_TO: distance(target, anchor) < threshold (stricter)
     - BESIDE: similar to NEXT_TO
     
-    Containment/Multi-object:
+    VIEW-DEPENDENT (requires full spatial reasoning):
+    =================================================
+    These relations depend on the observer's viewpoint and CANNOT be
+    filtered using simple world-coordinate comparisons.
+    
+    Horizontal Relations - depend on viewing direction:
+    - LEFT_OF: requires knowing observer's facing direction
+    - RIGHT_OF: requires knowing observer's facing direction
+    - IN_FRONT_OF: requires knowing observer's position
+    - BEHIND: requires knowing observer's position
+    
+    Complex Relations - require geometric reasoning:
     - INSIDE: target is within anchor's bounding box
     - BETWEEN: target is between two anchors
     """
     
-    # Vertical relations (can filter by Z coordinate)
+    # ===== VIEW-INDEPENDENT: Vertical relations (Z-axis) =====
+    # Safe for quick filtering - gravity defines "up" universally
     ON = "on"
     ABOVE = "above"
     BELOW = "below"
     
-    # Horizontal relations (can filter by X/Y coordinates)
+    # ===== VIEW-INDEPENDENT: Distance relations =====
+    # Safe for quick filtering - Euclidean distance is view-independent
+    NEAR = "near"
+    NEXT_TO = "next_to"
+    BESIDE = "beside"
+    
+    # ===== VIEW-DEPENDENT: Horizontal relations =====
+    # NOT safe for quick filtering - require observer viewpoint
     LEFT_OF = "left_of"
     RIGHT_OF = "right_of"
     IN_FRONT_OF = "in_front_of"
     BEHIND = "behind"
     
-    # Distance relations (can filter by Euclidean distance)
-    NEAR = "near"
-    NEXT_TO = "next_to"
-    BESIDE = "beside"
-    
-    # Containment/Multi-object
+    # ===== COMPLEX: Containment/Multi-object =====
+    # NOT safe for quick filtering - require full geometric reasoning
     INSIDE = "inside"
     BETWEEN = "between"
     
@@ -181,23 +192,58 @@ class SpatialRelation(str, Enum):
         # Unknown relation - return None (no quick filter available)
         return None
     
-    def supports_quick_filter(self) -> bool:
-        """Check if this relation supports quick coordinate-based filtering."""
-        # All predefined relations support quick filtering
-        return True
+    def is_view_dependent(self) -> bool:
+        """
+        Check if this relation is view-dependent.
+        
+        View-dependent relations (left, right, front, behind) require
+        knowing the observer's viewpoint and cannot be filtered using
+        simple world-coordinate comparisons.
+        """
+        return self in [
+            SpatialRelation.LEFT_OF,
+            SpatialRelation.RIGHT_OF,
+            SpatialRelation.IN_FRONT_OF,
+            SpatialRelation.BEHIND,
+        ]
     
-    def get_filter_type(self) -> str:
-        """Get the type of quick filter for this relation."""
+    def supports_quick_filter(self) -> bool:
+        """
+        Check if this relation supports quick coordinate-based filtering.
+        
+        Only VIEW-INDEPENDENT relations support quick filtering:
+        - Vertical (on, above, below): gravity defines "up"
+        - Distance (near, next_to, beside): Euclidean distance is view-independent
+        
+        View-dependent relations (left, right, front, behind) and
+        complex relations (inside, between) require full spatial reasoning.
+        """
+        # Only view-independent relations support quick filtering
+        return self in [
+            # Vertical relations
+            SpatialRelation.ON,
+            SpatialRelation.ABOVE,
+            SpatialRelation.BELOW,
+            # Distance relations
+            SpatialRelation.NEAR,
+            SpatialRelation.NEXT_TO,
+            SpatialRelation.BESIDE,
+        ]
+    
+    def get_filter_type(self) -> Optional[str]:
+        """
+        Get the type of quick filter for this relation.
+        
+        Returns None for view-dependent or complex relations that
+        don't support quick filtering.
+        """
         if self in [SpatialRelation.ON, SpatialRelation.ABOVE, SpatialRelation.BELOW]:
             return "vertical"
-        elif self in [SpatialRelation.LEFT_OF, SpatialRelation.RIGHT_OF, 
-                      SpatialRelation.IN_FRONT_OF, SpatialRelation.BEHIND]:
-            return "horizontal"
         elif self in [SpatialRelation.NEAR, SpatialRelation.NEXT_TO, SpatialRelation.BESIDE]:
             return "distance"
-        elif self in [SpatialRelation.INSIDE, SpatialRelation.BETWEEN]:
-            return "containment"
-        return "unknown"
+        # View-dependent and complex relations don't have quick filters
+        # LEFT_OF, RIGHT_OF, IN_FRONT_OF, BEHIND, INSIDE, BETWEEN
+        return None
 
 
 # List of supported relations for prompt
