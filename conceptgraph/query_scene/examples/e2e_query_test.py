@@ -423,9 +423,8 @@ def run_e2e_test(
     logger.info("[Step 1] Parsing query...")
     try:
         parser = QueryParser(
-            llm_model="gpt-4o-2024-08-06",
-            scene_categories=scene_categories,
-            temperature=0.0
+            llm_model="gpt-5.2-2025-12-11",
+            scene_categories=scene_categories
         )
         parsed = parser.parse(query)
         result["parse_success"] = True
