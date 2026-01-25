@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Tuple
 
 import cv2
 import matplotlib.pyplot as plt
+from loguru import logger
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
@@ -24,7 +25,7 @@ try:
     HAS_CLIP = True
 except ImportError:
     HAS_CLIP = False
-    print("Warning: open_clip not available")
+    logger.warning("open_clip not available")
 
 
 def load_pcd_data(pcd_path: str) -> Dict:
@@ -287,46 +288,46 @@ def visualize_query(
         target_terms: 目标物体的关键词列表 (用于高亮)
         anchor_terms: 参照物的关键词列表 (用于高亮)
     """
-    print(f"Loading data from: {pcd_path}")
+    logger.info(f"Loading data from: {pcd_path}")
     data = load_pcd_data(pcd_path)
     objects = data.get('objects', [])
-    print(f"  Found {len(objects)} objects")
+    logger.info(f"Found {len(objects)} objects")
     
     # Encode query
-    print(f"Encoding query: '{query}'")
+    logger.info(f"Encoding query: '{query}'")
     query_feature = encode_text_query(query)
     
     # Compute similarities
-    print("Computing object similarities...")
+    logger.info("Computing object similarities...")
     similarities = compute_object_similarities(objects, query_feature)
     
     # Print top results
-    print("\nTop 10 objects by similarity:")
+    logger.info("Top 10 objects by similarity:")
     for i, (obj_id, category, sim, centroid) in enumerate(similarities[:10]):
         pos_str = f"({centroid[0]:.2f}, {centroid[1]:.2f}, {centroid[2]:.2f})"
-        print(f"  {i+1}. #{obj_id}: {category:20s} sim={sim:.4f}  @ {pos_str}")
+        logger.info(f"  {i+1}. #{obj_id}: {category:20s} sim={sim:.4f}  @ {pos_str}")
     
     # Create output directory
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate BEV heatmap
-    print("\nGenerating BEV heatmap...")
+    logger.info("Generating BEV heatmap...")
     bev_heatmap = create_bev_heatmap(objects, similarities, query=query)
     bev_path = output_dir / "object_heatmap_bev.png"
     cv2.imwrite(str(bev_path), cv2.cvtColor(bev_heatmap, cv2.COLOR_RGB2BGR))
-    print(f"  Saved to: {bev_path}")
+    logger.info(f"Saved to: {bev_path}")
     
     # Generate point heatmap
-    print("Generating point-level heatmap...")
+    logger.info("Generating point-level heatmap...")
     point_heatmap = create_point_heatmap(objects, query_feature, query=query)
     point_path = output_dir / "point_heatmap.png"
     cv2.imwrite(str(point_path), cv2.cvtColor(point_heatmap, cv2.COLOR_RGB2BGR))
-    print(f"  Saved to: {point_path}")
+    logger.info(f"Saved to: {point_path}")
     
     # Also encode sub-queries for target and anchor
     if target_terms or anchor_terms:
-        print("\nGenerating separate heatmaps for target and anchor...")
+        logger.info("Generating separate heatmaps for target and anchor...")
         
         if target_terms:
             target_query = " ".join(target_terms)
@@ -335,7 +336,7 @@ def visualize_query(
             target_heatmap = create_bev_heatmap(objects, target_sims, query=f"target: {target_query}")
             target_path = output_dir / "target_heatmap.png"
             cv2.imwrite(str(target_path), cv2.cvtColor(target_heatmap, cv2.COLOR_RGB2BGR))
-            print(f"  Target heatmap: {target_path}")
+            logger.info(f"Target heatmap: {target_path}")
         
         if anchor_terms:
             anchor_query = " ".join(anchor_terms)
@@ -344,10 +345,10 @@ def visualize_query(
             anchor_heatmap = create_bev_heatmap(objects, anchor_sims, query=f"anchor: {anchor_query}")
             anchor_path = output_dir / "anchor_heatmap.png"
             cv2.imwrite(str(anchor_path), cv2.cvtColor(anchor_heatmap, cv2.COLOR_RGB2BGR))
-            print(f"  Anchor heatmap: {anchor_path}")
+            logger.info(f"Anchor heatmap: {anchor_path}")
     
     # Generate combined visualization
-    print("\nGenerating combined visualization...")
+    logger.info("Generating combined visualization...")
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
     
     # Full query
@@ -381,9 +382,9 @@ def visualize_query(
     combined_path = output_dir / "combined_visualization.png"
     plt.savefig(combined_path, dpi=150, bbox_inches='tight')
     plt.close()
-    print(f"  Combined: {combined_path}")
+    logger.info(f"Combined: {combined_path}")
     
-    print("\nVisualization complete!")
+    logger.success("Visualization complete!")
     return {
         "bev_heatmap": str(bev_path),
         "point_heatmap": str(point_path),

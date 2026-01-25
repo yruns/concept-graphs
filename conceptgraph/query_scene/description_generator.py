@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from loguru import logger
 from typing import Any, Dict, List, Optional
 import numpy as np
 import requests
@@ -58,13 +59,13 @@ class DescriptionGenerator:
         
         for i, obj in enumerate(objects):
             if i % 10 == 0:
-                print(f"  Generating descriptions: {i}/{len(objects)}")
+                logger.debug(f"Generating descriptions: {i}/{len(objects)}")
             
             try:
                 desc = self._generate_object_description(obj, rgb_images, objects, scene_repr)
                 results[obj.obj_id] = desc
             except Exception as e:
-                print(f"  Warning: Failed to generate description for object {obj.obj_id}: {e}")
+                logger.warning(f"Failed to generate description for object {obj.obj_id}: {e}")
                 results[obj.obj_id] = self._default_description(obj)
         
         return results

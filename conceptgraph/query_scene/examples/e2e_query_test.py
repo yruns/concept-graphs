@@ -400,10 +400,10 @@ def run_e2e_test(
     """Run end-to-end test with step-by-step visualization."""
     from conceptgraph.query_scene.query_parser import QueryParser
     
-    print("\n" + "=" * 70)
-    print(f"Test: {test_name}")
-    print(f"Query: \"{query}\"")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info(f"Test: {test_name}")
+    logger.info(f"Query: \"{query}\"")
+    logger.info("=" * 70)
     
     # Create query-specific output directory
     safe_name = query.replace(" ", "_").replace("\"", "").replace("'", "")[:50]
@@ -420,7 +420,7 @@ def run_e2e_test(
     }
     
     # Parse query
-    print("\n[Step 1] Parsing query...")
+    logger.info("[Step 1] Parsing query...")
     try:
         parser = QueryParser(
             llm_model="gpt-4o-mini",
@@ -430,20 +430,20 @@ def run_e2e_test(
         parsed = parser.parse(query)
         result["parse_success"] = True
         
-        print(f"  ✓ Root: {parsed.root.category}")
+        logger.success(f"Root: {parsed.root.category}")
         if parsed.root.spatial_constraints:
             for sc in parsed.root.spatial_constraints:
-                print(f"    Spatial: {sc.relation} → {[a.category for a in sc.anchors]}")
+                logger.info(f"  Spatial: {sc.relation} → {[a.category for a in sc.anchors]}")
         if parsed.root.select_constraint:
             sc = parsed.root.select_constraint
-            print(f"    Select: {sc.constraint_type.value} ({sc.metric})")
+            logger.info(f"  Select: {sc.constraint_type.value} ({sc.metric})")
         
     except Exception as e:
-        print(f"  ✗ Parse failed: {e}")
+        logger.error(f"Parse failed: {e}")
         return result
     
     # Execute with tracking
-    print("\n[Step 2] Executing query (with step tracking)...")
+    logger.info("[Step 2] Executing query (with step tracking)...")
     try:
         exec_result, vis = execute_with_tracking(parsed, objects)
         result["execute_success"] = True
@@ -455,35 +455,33 @@ def run_e2e_test(
                 "description": step.description,
                 "count": len(step.object_ids),
             })
-            print(f"    {step.step_name}: {len(step.object_ids)} objects")
+            logger.info(f"  {step.step_name}: {len(step.object_ids)} objects")
         
         if exec_result.matched_objects:
-            print(f"\n  ✓ Final: {len(exec_result.matched_objects)} object(s)")
+            logger.success(f"Final: {len(exec_result.matched_objects)} object(s)")
             for obj in exec_result.matched_objects:
-                print(f"    - {obj.object_tag} (id={obj.obj_id})")
+                logger.info(f"  - {obj.object_tag} (id={obj.obj_id})")
             
             result["matched_objects"] = [
                 {"id": obj.obj_id, "tag": obj.object_tag}
                 for obj in exec_result.matched_objects
             ]
         else:
-            print(f"  ⚠ No objects matched")
+            logger.warning("No objects matched")
             
     except Exception as e:
-        print(f"  ✗ Execute failed: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.exception(f"Execute failed: {e}")
         return result
     
     # Generate visualizations
-    print("\n[Step 3] Generating visualizations...")
+    logger.info("[Step 3] Generating visualizations...")
     try:
         save_filtering_steps(objects, vis, output_dir)
         # Note: stride=5 is the default used during mapping
         save_keyframes(objects, vis.final_ids, scene_path, output_dir, stride=5)
-        print(f"  ✓ Saved to: {output_dir.name}/")
+        logger.success(f"Saved to: {output_dir.name}/")
     except Exception as e:
-        print(f"  ✗ Visualization failed: {e}")
+        logger.error(f"Visualization failed: {e}")
     
     return result
 
@@ -497,9 +495,9 @@ def main():
         logger.error(f"Scene not found: {scene_path}")
         return
     
-    print("\n" + "=" * 70)
-    print("Loading Scene Objects")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info("Loading Scene Objects")
+    logger.info("=" * 70)
     
     objects, _ = load_scene_objects(str(scene_path))
     if not objects:
@@ -507,7 +505,7 @@ def main():
         return
     
     categories = Counter(obj.object_tag for obj in objects)
-    print(f"\nLoaded {len(objects)} objects")
+    logger.info(f"Loaded {len(objects)} objects")
     scene_categories = list(categories.keys())
     
     # Test queries
@@ -525,21 +523,22 @@ def main():
         all_results.append(result)
     
     # Summary
-    print("\n" + "=" * 70)
-    print("Test Summary")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.info("Test Summary")
+    logger.info("=" * 70)
     
     passed = 0
     for r in all_results:
-        status = "✓" if r["matched_objects"] else "✗"
         obj_count = len(r["matched_objects"])
-        print(f"  {status} {r['test_name']:40} -> {obj_count} objects")
-        print(f"      Output: {Path(r['output_dir']).name}/")
         if r["matched_objects"]:
+            logger.success(f"{r['test_name']:40} -> {obj_count} objects")
             passed += 1
+        else:
+            logger.warning(f"{r['test_name']:40} -> {obj_count} objects")
+        logger.info(f"    Output: {Path(r['output_dir']).name}/")
     
-    print(f"\nTotal: {passed}/{len(all_results)} tests passed")
-    print(f"All visualizations: {output_dir}")
+    logger.info(f"Total: {passed}/{len(all_results)} tests passed")
+    logger.info(f"All visualizations: {output_dir}")
     
     # Save results
     results_path = output_dir / "test_results.json"

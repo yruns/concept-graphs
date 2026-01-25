@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Demo script for QueryScene on Replica room0."""
 from __future__ import annotations
+from loguru import logger
 import sys
 from pathlib import Path
 
@@ -20,13 +21,13 @@ def main():
     scene_path = Path(replica_root) / "room0"
     
     if not scene_path.exists():
-        print(f"Scene path not found: {scene_path}")
-        print("Please set REPLICA_ROOT environment variable or ensure the path exists.")
+        logger.error(f"Scene path not found: {scene_path}")
+        logger.info("Please set REPLICA_ROOT environment variable or ensure the path exists.")
         return
     
-    print("=" * 60)
-    print("QueryScene Demo - Replica room0")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("QueryScene Demo - Replica room0")
+    logger.info("=" * 60)
     
     # Find pcd file
     pcd_dir = scene_path / "pcd_saves"
@@ -35,24 +36,24 @@ def main():
         pcd_files = list(pcd_dir.glob("*.pkl.gz"))
     
     if not pcd_files:
-        print(f"No pcd file found in {pcd_dir}")
-        print("Please run the ConceptGraphs pipeline first:")
-        print("  bash bashes/1_extract_2d_segmentation.sh")
-        print("  bash bashes/2_build_3d_object_map.sh")
+        logger.error(f"No pcd file found in {pcd_dir}")
+        logger.info("Please run the ConceptGraphs pipeline first:")
+        logger.info("  bash bashes/1_extract_2d_segmentation.sh")
+        logger.info("  bash bashes/2_build_3d_object_map.sh")
         return
     
     pcd_file = pcd_files[0]
-    print(f"\nUsing pcd file: {pcd_file.name}")
+    logger.info(f"Using pcd file: {pcd_file.name}")
     
     # Create pipeline
     # LLM model must be explicitly specified
     llm_model = os.environ.get("LLM_MODEL")
     if not llm_model:
-        print("Error: LLM_MODEL environment variable must be set.")
-        print("Available models: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview")
+        logger.error("LLM_MODEL environment variable must be set.")
+        logger.info("Available models: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview")
         return
     
-    print(f"\nLoading scene and building indices (using LLM: {llm_model})...")
+    logger.info(f"Loading scene and building indices (using LLM: {llm_model})...")
     try:
         pipeline = QueryScenePipeline.from_scene(
             str(scene_path),
@@ -61,17 +62,17 @@ def main():
             llm_model=llm_model,
         )
     except Exception as e:
-        print(f"Error loading scene: {e}")
+        logger.error(f"Error loading scene: {e}")
         import traceback
-        traceback.print_exc()
+        logger.exception("Stack trace:")
         return
     
     # Print scene summary
     summary = pipeline.summary()
-    print(f"\nScene loaded:")
-    print(f"  Objects: {summary['scene']['n_objects']}")
-    print(f"  Views: {summary['scene']['n_views']}")
-    print(f"  Categories: {list(summary['scene']['categories'].keys())[:10]}...")
+    logger.info("Scene loaded:")
+    logger.info(f"  Objects: {summary['scene']['n_objects']}")
+    logger.info(f"  Views: {summary['scene']['n_views']}")
+    logger.info(f"  Categories: {list(summary['scene']['categories'].keys())[:10]}...")
     
     # Demo queries
     queries = [
@@ -81,22 +82,22 @@ def main():
         "窗户附近的物体",
     ]
     
-    print("\n" + "=" * 60)
-    print("Running queries...")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Running queries...")
+    logger.info("=" * 60)
     
     for query in queries:
-        print(f"\n>>> Query: \"{query}\"")
+        logger.info(f">>> Query: \"{query}\"")
         try:
             result = pipeline.query(query)
-            print(format_result(result))
+            logger.info(format_result(result))
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"{e}")
     
     # Interactive mode
-    print("\n" + "=" * 60)
-    print("Interactive mode (type 'quit' to exit)")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("Interactive mode (type 'quit' to exit)")
+    logger.info("=" * 60)
     
     while True:
         try:
@@ -107,12 +108,12 @@ def main():
                 break
             
             result = pipeline.query(query)
-            print(format_result(result))
+            logger.info(format_result(result))
         except KeyboardInterrupt:
-            print("\nBye!")
+            logger.info("Bye!")
             break
         except Exception as e:
-            print(f"Error: {e}")
+            logger.error(f"{e}")
 
 
 if __name__ == "__main__":

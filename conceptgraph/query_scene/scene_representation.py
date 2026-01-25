@@ -13,6 +13,7 @@ import pickle
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+from loguru import logger
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -98,14 +99,14 @@ class QuerySceneRepresentation:
         pcd_file = Path(pcd_file)
         scene_path = Path(scene_path)
         
-        print(f"Loading scene from: {pcd_file}")
+        logger.info(f"Loading scene from: {pcd_file}")
         
         # Load pcd data
         with gzip.open(pcd_file, 'rb') as f:
             data = pickle.load(f)
         
         raw_objects = data.get('objects', [])
-        print(f"  Found {len(raw_objects)} raw objects")
+        logger.info(f"Found {len(raw_objects)} raw objects")
         
         # Create scene representation
         scene = cls(scene_id=scene_path.name)
@@ -122,7 +123,7 @@ class QuerySceneRepresentation:
         # Compute scene bounds
         scene._compute_scene_bounds()
         
-        print(f"  Loaded {len(scene.objects)} objects, {len(scene.camera_poses)} poses")
+        logger.info(f"Loaded {len(scene.objects)} objects, {len(scene.camera_poses)} poses")
         
         return scene
     
@@ -190,7 +191,7 @@ class QuerySceneRepresentation:
                 break
         
         if pose_file is None:
-            print(f"  Warning: No pose file found in {scene_path}")
+            logger.warning(f"No pose file found in {scene_path}")
             return
         
         # Load intrinsics if available
@@ -375,7 +376,7 @@ class QuerySceneRepresentation:
         with gzip.open(output_path, 'wb') as f:
             pickle.dump(data, f)
         
-        print(f"Saved scene to: {output_path}")
+        logger.info(f"Saved scene to: {output_path}")
     
     @classmethod
     def load(cls, path: Path) -> QuerySceneRepresentation:

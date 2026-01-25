@@ -75,14 +75,14 @@ def main():
     result = selector.select_keyframes(args.query, k=args.k)
     
     # Print results
-    print()
-    print("=" * 50)
-    print(f"Query: {args.query}")
-    print(f"Target: {result.target_term} -> {len(result.target_objects)} objects")
+    
+    logger.info("=" * 50)
+    logger.info(f"Query: {args.query}")
+    logger.info(f"Target: {result.target_term} -> {len(result.target_objects)} objects")
     if result.anchor_term:
-        print(f"Anchor: {result.anchor_term} -> {len(result.anchor_objects)} objects")
-    print(f"Selected keyframes: {result.keyframe_indices}")
-    print("=" * 50)
+        logger.info(f"Anchor: {result.anchor_term} -> {len(result.anchor_objects)} objects")
+    logger.info(f"Selected keyframes: {result.keyframe_indices}")
+    logger.info("=" * 50)
     
     # Save visualization
     if result.keyframe_paths:
@@ -101,7 +101,7 @@ def main():
             safe_name = args.query.replace(" ", "_")[:30]
             out_path = output_dir / f"{safe_name}.jpg"
             cv2.imwrite(str(out_path), combined)
-            print(f"Saved: {out_path}")
+            logger.info(f"Saved: {out_path}")
     
     return result
 

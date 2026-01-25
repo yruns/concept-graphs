@@ -160,52 +160,52 @@ MOCK_SCENE_CATEGORIES = [
 
 def print_query_result(query: str, result, description: str):
     """Pretty print a parsing result."""
-    print("\n" + "=" * 70)
-    print(f"Query: \"{query}\"")
-    print(f"Description: {description}")
-    print("-" * 70)
+    logger.info("=" * 70)
+    logger.info(f"Query: \"{query}\"")
+    logger.info(f"Description: {description}")
+    logger.info("-" * 70)
     
     # Print the parsed structure
-    print(f"Target: {result.root.category}")
+    logger.info(f"Target: {result.root.category}")
     
     if result.root.attributes:
-        print(f"Attributes: {result.root.attributes}")
+        logger.info(f"Attributes: {result.root.attributes}")
     
     if result.root.spatial_constraints:
         for i, sc in enumerate(result.root.spatial_constraints):
             anchor_cats = [a.category for a in sc.anchors]
-            print(f"Spatial Constraint {i+1}: [{sc.relation}] -> {anchor_cats}")
+            logger.info(f"Spatial Constraint {i+1}: [{sc.relation}] -> {anchor_cats}")
             
             # Check for nested constraints in anchors
             for anchor in sc.anchors:
                 if anchor.spatial_constraints:
                     for asc in anchor.spatial_constraints:
                         nested_anchors = [a.category for a in asc.anchors]
-                        print(f"  └─ Anchor constraint: [{asc.relation}] -> {nested_anchors}")
+                        logger.info(f"  └─ Anchor constraint: [{asc.relation}] -> {nested_anchors}")
                 if anchor.select_constraint:
                     sel = anchor.select_constraint
                     ref = sel.reference.category if sel.reference else "N/A"
-                    print(f"  └─ Anchor select: {sel.constraint_type.value} ({sel.metric}, {sel.order}) -> {ref}")
+                    logger.info(f"  └─ Anchor select: {sel.constraint_type.value} ({sel.metric}, {sel.order}) -> {ref}")
     
     if result.root.select_constraint:
         sel = result.root.select_constraint
         ref = sel.reference.category if sel.reference else "N/A"
         pos = f", position={sel.position}" if sel.position else ""
-        print(f"Select Constraint: {sel.constraint_type.value} ({sel.metric}, {sel.order}{pos}) -> {ref}")
+        logger.info(f"Select Constraint: {sel.constraint_type.value} ({sel.metric}, {sel.order}{pos}) -> {ref}")
     
-    print(f"Expect Unique: {result.expect_unique}")
+    logger.info(f"Expect Unique: {result.expect_unique}")
     
     # Print raw JSON (condensed)
-    print("-" * 70)
-    print("JSON Structure:")
+    logger.info("-" * 70)
+    logger.info("JSON Structure:")
     json_str = result.model_dump_json(indent=2)
     # Truncate if too long
     if len(json_str) > 1000:
         lines = json_str.split('\n')
-        print('\n'.join(lines[:30]))
-        print("... (truncated)")
+        logger.info('\n'.join(lines[:30]))
+        logger.info("... (truncated)")
     else:
-        print(json_str)
+        logger.info(json_str)
 
 
 def test_simple_parser(queries: List[dict]):
@@ -214,9 +214,9 @@ def test_simple_parser(queries: List[dict]):
     from conceptgraph.query_scene.query_structures import GroundingQuery, QueryNode
     from conceptgraph.query_scene.query_parser import SimpleQueryParser
     
-    print("\n" + "#" * 70)
-    print("# Testing SimpleQueryParser (rule-based, no LLM)")
-    print("#" * 70)
+    logger.info("#" * 70)
+    logger.info("# Testing SimpleQueryParser (rule-based, no LLM)")
+    logger.info("#" * 70)
     
     parser = SimpleQueryParser(MOCK_SCENE_CATEGORIES)
     
@@ -228,7 +228,7 @@ def test_simple_parser(queries: List[dict]):
             result = parser.parse(query)
             print_query_result(query, result, desc)
         except Exception as e:
-            print(f"\nError parsing '{query}': {e}")
+            logger.error(f"Error parsing '{query}': {e}")
 
 
 def test_llm_parser(queries: List[dict], llm_model: str):
@@ -236,18 +236,18 @@ def test_llm_parser(queries: List[dict], llm_model: str):
     try:
         from conceptgraph.query_scene.query_parser import QueryParser
     except ImportError as e:
-        print("\n" + "#" * 70)
-        print("# ERROR: Cannot import QueryParser")
-        print(f"# Missing dependency: {e}")
-        print("#")
-        print("# To install required dependencies, run:")
-        print("#   pip install langchain-openai")
-        print("#" * 70)
+        logger.info("#" * 70)
+        logger.error("Cannot import QueryParser")
+        logger.error(f"Missing dependency: {e}")
+        logger.info("#")
+        logger.info("To install required dependencies, run:")
+        logger.info("  pip install langchain-openai")
+        logger.info("#" * 70)
         return
     
-    print("\n" + "#" * 70)
-    print(f"# Testing QueryParser with LLM: {llm_model}")
-    print("#" * 70)
+    logger.info("#" * 70)
+    logger.info(f"Testing QueryParser with LLM: {llm_model}")
+    logger.info("#" * 70)
     
     try:
         parser = QueryParser(
@@ -255,8 +255,8 @@ def test_llm_parser(queries: List[dict], llm_model: str):
             scene_categories=MOCK_SCENE_CATEGORIES,
         )
     except Exception as e:
-        print(f"\nFailed to initialize QueryParser: {e}")
-        print("Make sure langchain-openai is installed: pip install langchain-openai")
+        logger.error(f"Failed to initialize QueryParser: {e}")
+        logger.info("Make sure langchain-openai is installed: pip install langchain-openai")
         return
     
     for item in queries:
@@ -268,7 +268,7 @@ def test_llm_parser(queries: List[dict], llm_model: str):
             print_query_result(query, result, desc)
         except Exception as e:
             logger.error(f"Error parsing '{query}': {e}")
-            print(f"\nError parsing '{query}': {e}")
+            logger.error(f"Error parsing '{query}': {e}")
 
 
 def main():
@@ -286,11 +286,11 @@ def main():
     )
     args = parser.parse_args()
     
-    print("=" * 70)
-    print("Nested Query Parsing Test")
-    print("=" * 70)
-    print(f"\nTesting {len(TEST_QUERIES)} queries...")
-    print(f"Scene categories: {len(MOCK_SCENE_CATEGORIES)} categories")
+    logger.info("=" * 70)
+    logger.info("Nested Query Parsing Test")
+    logger.info("=" * 70)
+    logger.info(f"Testing {len(TEST_QUERIES)} queries...")
+    logger.info(f"Scene categories: {len(MOCK_SCENE_CATEGORIES)} categories")
     
     # Test simple parser
     # test_simple_parser(TEST_QUERIES)
@@ -299,16 +299,16 @@ def main():
     if args.llm_model and not args.simple_only:
         test_llm_parser(TEST_QUERIES, args.llm_model)
     elif not args.simple_only:
-        print("\n" + "#" * 70)
-        print("# Skipping LLM parser test (no --llm_model provided)")
-        print("# To test with LLM, run:")
-        print("#   python -m conceptgraph.query_scene.examples.test_nested_query_parsing \\")
-        print("#       --llm_model gpt-4o-2024-08-06")
-        print("#" * 70)
+        logger.info("#" * 70)
+        logger.info("Skipping LLM parser test (no --llm_model provided)")
+        logger.info("To test with LLM, run:")
+        logger.info("  python -m conceptgraph.query_scene.examples.test_nested_query_parsing \\")
+        logger.info("      --llm_model gpt-4o-2024-08-06")
+        logger.info("#" * 70)
     
-    print("\n" + "=" * 70)
-    print("Test completed!")
-    print("=" * 70)
+    logger.info("=" * 70)
+    logger.success("Test completed!")
+    logger.info("=" * 70)
 
 
 if __name__ == "__main__":

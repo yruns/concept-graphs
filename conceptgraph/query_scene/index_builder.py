@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+from loguru import logger
 from scipy.spatial import KDTree
 
 from .data_structures import ObjectNode, RegionNode, ViewScore
@@ -24,7 +25,7 @@ try:
     HAS_FAISS = True
 except ImportError:
     HAS_FAISS = False
-    print("Warning: FAISS not available, using numpy fallback for vector search")
+    logger.warning("FAISS not available, using numpy fallback for vector search")
 
 
 class CLIPIndex:
@@ -64,13 +65,13 @@ class CLIPIndex:
                 })
         
         if not features:
-            print("Warning: No features to index")
+            logger.warning("No features to index")
             return
         
         self.features = np.array(features, dtype=np.float32)
         self._build_index()
         
-        print(f"Built CLIP index with {len(self.features)} objects")
+        logger.info(f"Built CLIP index with {len(self.features)} objects")
     
     def _build_index(self) -> None:
         """Build the search index from features."""
@@ -193,7 +194,7 @@ class VisibilityIndex:
             visibility_radius: Maximum distance for visibility consideration.
             min_visible_ratio: Minimum visibility ratio to include in index.
         """
-        print(f"Building visibility index for {len(objects)} objects, {len(camera_poses)} views...")
+        logger.info(f"Building visibility index for {len(objects)} objects, {len(camera_poses)} views...")
         
         # Pre-compute category text features if CLIP model is provided
         category_text_features = {}
@@ -202,7 +203,7 @@ class VisibilityIndex:
         
         for view_id, pose in enumerate(camera_poses):
             if view_id % 50 == 0:
-                print(f"  Processing view {view_id}/{len(camera_poses)}")
+                logger.debug(f"Processing view {view_id}/{len(camera_poses)}")
             
             view_objects = []
             
@@ -251,7 +252,7 @@ class VisibilityIndex:
                 key=lambda x: x[1].get_composite_score(), reverse=True
             )
         
-        print(f"Built visibility index: {len(self.object_to_views)} objects, {len(self.view_to_objects)} views")
+        logger.info(f"Built visibility index: {len(self.object_to_views)} objects, {len(self.view_to_objects)} views")
     
     def _compute_category_features(
         self, 
@@ -444,7 +445,7 @@ class SpatialIndex:
         
         if positions:
             self.tree = KDTree(np.array(positions))
-            print(f"Built spatial index with {len(positions)} objects")
+            logger.info(f"Built spatial index with {len(positions)} objects")
     
     def query_radius(
         self,
@@ -521,7 +522,7 @@ class RegionIndex:
     def build_from_regions(self, regions: List[RegionNode]) -> None:
         """Build index from explicit region nodes."""
         if not regions:
-            print("No explicit regions provided")
+            logger.info("No explicit regions provided")
             return
         
         self.regions = []
@@ -545,7 +546,7 @@ class RegionIndex:
             norms = np.linalg.norm(self.region_features, axis=1, keepdims=True)
             self.region_features = self.region_features / (norms + 1e-8)
         
-        print(f"Built region index with {len(self.regions)} regions")
+        logger.info(f"Built region index with {len(self.regions)} regions")
     
     def build_from_objects(
         self,
@@ -609,7 +610,7 @@ class RegionIndex:
             labels = kmeans.fit_predict(combined)
         except Exception as e:
             # Fallback: simple spatial clustering (covers ImportError, numpy dtype issues, etc.)
-            print(f"Warning: sklearn clustering failed ({e}), using simple spatial clustering")
+            logger.warning(f"sklearn clustering failed ({e}), using simple spatial clustering")
             labels = self._simple_spatial_cluster(positions, n_clusters)
         
         # Build regions from clusters
@@ -648,7 +649,7 @@ class RegionIndex:
             norms = np.linalg.norm(self.region_features, axis=1, keepdims=True)
             self.region_features = self.region_features / (norms + 1e-8)
         
-        print(f"Built region index with {len(self.regions)} auto-clustered regions")
+        logger.info(f"Built region index with {len(self.regions)} auto-clustered regions")
     
     def _build_single_region(self, objects: List[ObjectNode]) -> None:
         """Build single region containing all objects."""
@@ -666,7 +667,7 @@ class RegionIndex:
         if feats:
             self.region_features = np.mean(feats, axis=0, keepdims=True).astype(np.float32)
         
-        print("Built single-region index (few objects)")
+        logger.info("Built single-region index (few objects)")
     
     def _simple_spatial_cluster(self, positions: np.ndarray, n_clusters: int) -> np.ndarray:
         """Simple grid-based spatial clustering as fallback."""
@@ -763,7 +764,7 @@ class SceneIndices:
         Returns:
             SceneIndices with all indices built
         """
-        print("Building scene indices...")
+        logger.info("Building scene indices...")
         
         # 1. Object-level CLIP index
         clip_index = CLIPIndex(feature_dim=scene.feature_dim)
@@ -796,7 +797,7 @@ class SceneIndices:
         point_index = PointLevelIndex(feature_dim=scene.feature_dim)
         point_index.build(scene.objects)
         
-        print("All indices built successfully")
+        logger.success("All indices built successfully")
         
         return cls(
             clip_index=clip_index,
@@ -931,7 +932,7 @@ class PointLevelIndex:
             objects: List of ObjectNode with point_cloud attribute
         """
         if not objects:
-            print("No objects to build point index from")
+            logger.warning("No objects to build point index from")
             return
         
         all_points = []
@@ -973,7 +974,7 @@ class PointLevelIndex:
             current_idx += n_pts
         
         if not all_points:
-            print("No valid point clouds found")
+            logger.warning("No valid point clouds found")
             return
         
         self.all_points = np.vstack(all_points).astype(np.float32)
@@ -986,7 +987,7 @@ class PointLevelIndex:
         self.n_points = len(self.all_points)
         self.n_objects = len(self.obj_point_ranges)
         
-        print(f"Built point index: {self.n_points} points from {self.n_objects} objects")
+        logger.info(f"Built point index: {self.n_points} points from {self.n_objects} objects")
     
     def load_openscene_features(
         self,
@@ -1023,16 +1024,16 @@ class PointLevelIndex:
             import faiss
             self._feature_index = faiss.IndexFlatIP(self.feature_dim)
             self._feature_index.add(self.point_features)
-            print(f"Built FAISS index for {self.n_points} point features")
+            logger.info(f"Built FAISS index for {self.n_points} point features")
         except ImportError:
             self._feature_index = None
-            print("FAISS not available, using numpy for feature search")
+            logger.warning("FAISS not available, using numpy for feature search")
         
         # Map points to objects if provided
         if objects:
             self._map_points_to_objects(objects)
         
-        print(f"Loaded OpenScene features: {self.n_points} points, {self.feature_dim}D")
+        logger.info(f"Loaded OpenScene features: {self.n_points} points, {self.feature_dim}D")
     
     def _map_points_to_objects(self, objects: List[ObjectNode]) -> None:
         """Map loaded points to nearest objects."""
@@ -1081,7 +1082,7 @@ class PointLevelIndex:
             List of (point_index, similarity_score)
         """
         if self.point_features is None:
-            print("No per-point features available. Use load_openscene_features() first.")
+            logger.warning("No per-point features available. Use load_openscene_features() first.")
             return []
         
         # Encode query
@@ -1093,7 +1094,7 @@ class PointLevelIndex:
         
         # Ensure same dimension
         if len(query_feat) != self.feature_dim:
-            print(f"Feature dimension mismatch: query={len(query_feat)}, index={self.feature_dim}")
+            logger.error(f"Feature dimension mismatch: query={len(query_feat)}, index={self.feature_dim}")
             return []
         
         query_feat = query_feat / (np.linalg.norm(query_feat) + 1e-8)

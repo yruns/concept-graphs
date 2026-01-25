@@ -441,7 +441,7 @@ def visualize_result(
     outputs = {}
     
     if not result.success:
-        print(f"Cannot visualize failed result: {result.reason}")
+        logger.warning(f"Cannot visualize failed result: {result.reason}")
         return outputs
     
     target_ids = [result.object_id] if result.object_id is not None else []
@@ -464,7 +464,7 @@ def visualize_result(
         )
         outputs["ply"] = ply_path
     except Exception as e:
-        print(f"PLY visualization failed: {e}")
+        logger.error(f"PLY visualization failed: {e}")
     
     # 2D top-down visualization
     png_path = str(output_dir / "query_result_topdown.png")
@@ -478,6 +478,6 @@ def visualize_result(
         )
         outputs["png"] = png_path
     except Exception as e:
-        print(f"Top-down visualization failed: {e}")
+        logger.error(f"Top-down visualization failed: {e}")
     
     return outputs

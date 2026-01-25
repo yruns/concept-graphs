@@ -4,6 +4,7 @@ Simple test script for query parsing - runs without external dependencies.
 """
 
 import sys
+from loguru import logger
 from pathlib import Path
 
 # Add parent to path
@@ -47,41 +48,41 @@ MOCK_CATEGORIES = [
 ]
 
 def main():
-    print("=" * 60)
-    print("SimpleQueryParser Test")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("SimpleQueryParser Test")
+    logger.info("=" * 60)
     
     parser = SimpleQueryParser(MOCK_CATEGORIES)
     
     for query in TEST_QUERIES:
-        print(f"\nQuery: \"{query}\"")
-        print("-" * 40)
+        logger.info(f"Query: \"{query}\"")
+        logger.info("-" * 40)
         
         try:
             result = parser.parse(query)
-            print(f"  Target: {result.root.category}")
+            logger.info(f"Target: {result.root.category}")
             
             if result.root.attributes:
-                print(f"  Attributes: {result.root.attributes}")
+                logger.info(f"Attributes: {result.root.attributes}")
             
             if result.root.spatial_constraints:
                 for sc in result.root.spatial_constraints:
                     anchors = [a.category for a in sc.anchors]
-                    print(f"  Spatial: [{sc.relation}] -> {anchors}")
+                    logger.info(f"Spatial: [{sc.relation}] -> {anchors}")
             
             if result.root.select_constraint:
                 sel = result.root.select_constraint
                 ref = sel.reference.category if sel.reference else "N/A"
-                print(f"  Select: {sel.constraint_type.value} ({sel.metric}, {sel.order}) -> {ref}")
+                logger.info(f"Select: {sel.constraint_type.value} ({sel.metric}, {sel.order}) -> {ref}")
             
-            print(f"  Expect Unique: {result.expect_unique}")
+            logger.info(f"Expect Unique: {result.expect_unique}")
             
         except Exception as e:
-            print(f"  ERROR: {e}")
+            logger.error(f"{e}")
     
-    print("\n" + "=" * 60)
-    print("Test completed!")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.success("Test completed!")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":
