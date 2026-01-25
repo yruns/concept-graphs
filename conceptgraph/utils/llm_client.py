@@ -14,6 +14,11 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
         "api_key": "Qvylf4KKsq3GuvPsBilf7w4ynDicSfer",
         "api_version": "2024-02-15-preview",
     },
+    "gpt-5.2-2025-12-11": {
+        "endpoint": "https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl",
+        "api_key": "Eyt11Oeoj77MfGcMweDRODBsbYnPkWUp",
+        "api_version": "2024-03-01-preview",
+    },
     "gemini-2.5-pro": {
         "endpoint": "https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl/openai/deployments/gpt_openapi",
         "api_key": "K1Hn1GahMi3dpvLesYH67sS0S2Z1yFYE_GPT_AK",
@@ -140,7 +145,7 @@ if __name__ == "__main__":
     print()
     
     # Test with specific model
-    print("Testing gemini-3-flash-preview...")
-    llm_gemini = get_langchain_chat_model("gemini-3-flash-preview")
-    response = llm_gemini.invoke("What is 2+2?")
+    print("Testing gpt-5.2-2025-12-11...")
+    llm_gemini = get_langchain_chat_model("gpt-5.2-2025-12-11")
+    response = llm_gemini.invoke("hello, how are you?")
     print(f"Response: {response.content}")

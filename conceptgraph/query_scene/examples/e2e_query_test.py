@@ -423,7 +423,7 @@ def run_e2e_test(
     logger.info("[Step 1] Parsing query...")
     try:
         parser = QueryParser(
-            llm_model="gemini-3-flash-preview",
+            llm_model="gpt-4o-2024-08-06",
             scene_categories=scene_categories,
             temperature=0.0
         )
