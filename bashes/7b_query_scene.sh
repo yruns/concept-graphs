@@ -26,7 +26,6 @@ QUERY="${2:-pillow on the sofa}"
 K="${3:-3}"
 
 # LLM configuration
-export LLM_BASE_URL="${LLM_BASE_URL:-http://10.21.231.7:8006}"
 export LLM_MODEL="${LLM_MODEL:-gpt-4o-2024-08-06}"
 
 # Scene path
@@ -65,7 +64,8 @@ CMD="python -m conceptgraph.query_scene.examples.query_keyframes \
     --scene_path ${SCENE_PATH} \
     --query \"${QUERY}\" \
     --k ${K} \
-    --output_dir ${OUTPUT_DIR}"
+    --output_dir ${OUTPUT_DIR} \
+    --llm_model ${LLM_MODEL}"
 
 echo ""
 echo "Executing:"
