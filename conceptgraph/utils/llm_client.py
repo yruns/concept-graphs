@@ -132,20 +132,70 @@ def get_gemini3_flash() -> AzureChatOpenAI:
 
 
 if __name__ == "__main__":
-    # Test the model initialization
-    print("Testing LLM Client Initialization...")
+    from pydantic import BaseModel, Field
+    from typing import List
+    import time
+    
+    # Define test schema for structured output
+    class TestObject(BaseModel):
+        """A simple object for testing structured output."""
+        name: str = Field(description="Name of the object")
+        color: str = Field(description="Color of the object")
+        size: str = Field(description="Size: small, medium, or large")
+    
+    class TestResponse(BaseModel):
+        """Response containing a list of objects."""
+        objects: List[TestObject] = Field(description="List of objects found")
+        count: int = Field(description="Number of objects")
+    
+    print("=" * 60)
+    print("LLM Client Test - All Models")
+    print("=" * 60)
     print(f"Available models: {get_available_models()}")
     print()
     
-    # Test with default model
-    print("Testing default model (gpt-4o-2024-08-06)...")
-    llm = get_langchain_chat_model()
-    response = llm.invoke("Hello, how are you?")
-    print(f"Response: {response.content}")
-    print()
+    results = {}
     
-    # Test with specific model
-    print("Testing gpt-5.2-2025-12-11...")
-    llm_gemini = get_langchain_chat_model("gpt-5.2-2025-12-11")
-    response = llm_gemini.invoke("hello, how are you?")
-    print(f"Response: {response.content}")
+    for model_name in get_available_models():
+        print("-" * 60)
+        print(f"Testing: {model_name}")
+        print("-" * 60)
+        
+        try:
+            llm = get_langchain_chat_model(model_name, temperature=0.0)
+            
+            # Test 1: Basic invoke
+            print("  [1] Basic invoke...")
+            start = time.time()
+            response = llm.invoke("Say 'hello' in one word.")
+            basic_time = time.time() - start
+            print(f"      ✓ Response: {response.content[:50]}... ({basic_time:.2f}s)")
+            
+            # Test 2: Structured output
+            print("  [2] Structured output...")
+            start = time.time()
+            structured_llm = llm.with_structured_output(TestResponse)
+            response = structured_llm.invoke(
+                "List 2 objects in a room: a red chair and a blue table."
+            )
+            struct_time = time.time() - start
+            print(f"      ✓ Parsed {response.count} objects: {[o.name for o in response.objects]} ({struct_time:.2f}s)")
+            
+            results[model_name] = {"basic": True, "structured": True}
+            print(f"  ✓ {model_name}: ALL PASSED")
+            
+        except Exception as e:
+            results[model_name] = {"error": str(e)}
+            print(f"  ✗ {model_name}: FAILED - {e}")
+        
+        print()
+    
+    # Summary
+    print("=" * 60)
+    print("Summary")
+    print("=" * 60)
+    for model, result in results.items():
+        if "error" in result:
+            print(f"  ✗ {model}: FAILED")
+        else:
+            print(f"  ✓ {model}: OK")
