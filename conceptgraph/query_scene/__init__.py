@@ -54,6 +54,16 @@ from .spatial_relations import (
     check_relation,
     get_canonical_relation,
 )
+from .quick_filters import (
+    QuickFilters,
+    AttributeFilter,
+    FilterType,
+    FilterConfig,
+    QUICK_FILTER_CONFIGS,
+    quick_filter,
+    has_quick_filter,
+    get_supported_quick_filters,
+)
 
 from .index_builder import CLIPIndex, VisibilityIndex, SpatialIndex, RegionIndex, PointLevelIndex, SceneIndices
 from .point_feature_extractor import (
@@ -113,6 +123,15 @@ __all__ = [
     "RELATION_ALIASES",
     "check_relation",
     "get_canonical_relation",
+    # Quick filters
+    "QuickFilters",
+    "AttributeFilter",
+    "FilterType",
+    "FilterConfig",
+    "QUICK_FILTER_CONFIGS",
+    "quick_filter",
+    "has_quick_filter",
+    "get_supported_quick_filters",
     # Indices (hierarchical)
     "CLIPIndex",
     "VisibilityIndex",

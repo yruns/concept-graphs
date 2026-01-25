@@ -30,6 +30,7 @@ from .query_structures import (
     ConstraintType,
 )
 from .spatial_relations import SpatialRelationChecker, RelationResult
+from .quick_filters import QuickFilters, AttributeFilter, has_quick_filter
 
 if TYPE_CHECKING:
     from .keyframe_selector import SceneObject
@@ -81,6 +82,7 @@ class QueryExecutor:
         relation_checker: Optional[SpatialRelationChecker] = None,
         clip_features: Optional[np.ndarray] = None,
         clip_encoder: Optional[Any] = None,
+        use_quick_filters: bool = True,
     ):
         """
         Initialize the query executor.
@@ -90,11 +92,17 @@ class QueryExecutor:
             relation_checker: Optional pre-configured relation checker
             clip_features: Optional pre-computed CLIP features for objects
             clip_encoder: Optional CLIP text encoder for semantic matching
+            use_quick_filters: Whether to use quick filters for pre-filtering
         """
         self.objects = objects
         self.relation_checker = relation_checker or SpatialRelationChecker()
         self.clip_features = clip_features
         self.clip_encoder = clip_encoder
+        self.use_quick_filters = use_quick_filters
+        
+        # Quick filters for fast pre-filtering
+        self._quick_filters = QuickFilters() if use_quick_filters else None
+        self._attribute_filter = AttributeFilter() if use_quick_filters else None
         
         # Build category index
         self._category_index: Dict[str, List["SceneObject"]] = {}
@@ -307,13 +315,25 @@ class QueryExecutor:
         candidates: List["SceneObject"],
         attributes: List[str],
     ) -> List["SceneObject"]:
-        """Filter candidates by attributes (color, size, etc.)."""
-        # For now, we don't have attribute information in SceneObject
-        # This is a placeholder for future implementation
-        # Could use CLIP to match attributes against object descriptions
+        """Filter candidates by attributes (color, size, etc.).
         
-        # TODO: Implement attribute filtering using object descriptions or CLIP
-        return candidates
+        Uses AttributeFilter for color and size filtering.
+        """
+        if not attributes or not self._attribute_filter:
+            return candidates
+        
+        filtered = candidates
+        for attr in attributes:
+            attr_lower = attr.lower()
+            
+            # Try color filtering
+            if self._attribute_filter._color_lookup.get(attr_lower):
+                filtered = self._attribute_filter.filter_by_color(filtered, attr_lower)
+                logger.debug(f"[QueryExecutor] After color filter '{attr}': {len(filtered)} candidates")
+            
+            # Note: size filtering (largest, smallest) is handled by select_constraint
+        
+        return filtered
     
     def _apply_spatial_constraint(
         self,
@@ -322,6 +342,10 @@ class QueryExecutor:
     ) -> Tuple[List["SceneObject"], Dict[int, float]]:
         """
         Apply a spatial constraint to filter candidates.
+        
+        Uses a two-phase approach:
+        1. Quick filter: Fast pre-filtering using simple coordinate comparisons
+        2. Full check: Accurate spatial relation checking for remaining candidates
         
         Args:
             candidates: Current candidate objects
@@ -342,11 +366,29 @@ class QueryExecutor:
             )
             return candidates, {obj.obj_id: 1.0 for obj in candidates}
         
-        # Check each candidate against anchors
+        # Phase 1: Quick filter (if available)
+        pre_filtered = candidates
+        if self._quick_filters and self._quick_filters.has_filter(constraint.relation):
+            pre_filtered = self._quick_filters.filter_candidates(
+                candidates, anchor_objects, constraint.relation
+            )
+            logger.debug(
+                f"[QueryExecutor] Quick filter '{constraint.relation}': "
+                f"{len(candidates)} -> {len(pre_filtered)} candidates"
+            )
+            
+            # If quick filter eliminated all candidates, fall back to full list
+            if not pre_filtered:
+                logger.warning(
+                    f"[QueryExecutor] Quick filter eliminated all candidates, using full list"
+                )
+                pre_filtered = candidates
+        
+        # Phase 2: Full spatial relation check
         filtered = []
         scores = {}
         
-        for cand in candidates:
+        for cand in pre_filtered:
             best_score = 0.0
             satisfies_any = False
             

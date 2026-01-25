@@ -23,7 +23,11 @@ from .query_structures import (
     SelectConstraint,
     ConstraintType,
 )
-from conceptgraph.utils.llm_client import get_langchain_chat_model
+
+# Lazy import for LLM client to avoid dependency issues when not using LLM
+def _get_langchain_chat_model(*args, **kwargs):
+    from conceptgraph.utils.llm_client import get_langchain_chat_model
+    return get_langchain_chat_model(*args, **kwargs)
 
 
 # System prompt for query parsing
@@ -248,7 +252,7 @@ class QueryParser:
     def _get_llm(self):
         """Lazy initialization of LLM."""
         if self._llm is None:
-            self._llm = get_langchain_chat_model(
+            self._llm = _get_langchain_chat_model(
                 deployment_name=self.llm_model,
                 temperature=self.temperature,
             )
@@ -367,10 +371,10 @@ class SimpleQueryParser:
     Simple rule-based query parser for basic queries.
     
     Falls back to this when LLM is not available or for simple queries.
-    Does not support complex nesting.
+    Supports basic nesting but not as sophisticated as LLM parser.
     """
     
-    SPATIAL_KEYWORDS = ["on", "near", "beside", "above", "below", "in", "behind", "in_front_of"]
+    SPATIAL_KEYWORDS = ["on", "near", "beside", "above", "below", "in", "behind", "in_front_of", "next_to"]
     SUPERLATIVE_KEYWORDS = {
         "nearest": ("distance", "min"),
         "closest": ("distance", "min"),
@@ -381,6 +385,10 @@ class SimpleQueryParser:
         "highest": ("height", "max"),
         "lowest": ("height", "min"),
     }
+    ORDINAL_KEYWORDS = {
+        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
+        "1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5,
+    }
     
     def __init__(self, scene_categories: Optional[List[str]] = None):
         self.scene_categories = scene_categories or []
@@ -390,58 +398,33 @@ class SimpleQueryParser:
         query_lower = query.lower().strip()
         expect_unique = query_lower.startswith("the ")
         
-        # Remove articles
-        clean = query_lower.replace("the ", "").replace("a ", "").replace("an ", "")
+        # Remove articles (use word boundaries to avoid removing 'a' from 'sofa')
+        import re
+        clean = re.sub(r'\bthe\b\s*', '', query_lower)
+        clean = re.sub(r'\ba\b\s*', '', clean)
+        clean = re.sub(r'\ban\b\s*', '', clean)
+        words = clean.split()
         
-        # Check for superlative
+        # Check for "between X and Y"
+        if " between " in clean and " and " in clean:
+            return self._parse_between(query, clean, expect_unique)
+        
+        # Check for ordinal (e.g., "second chair from the left")
+        for ordinal, position in self.ORDINAL_KEYWORDS.items():
+            if ordinal in words:
+                return self._parse_ordinal(query, clean, ordinal, position, expect_unique)
+        
+        # Check for superlative + spatial (e.g., "largest book on the shelf")
         for keyword, (metric, order) in self.SUPERLATIVE_KEYWORDS.items():
             if keyword in clean:
-                parts = clean.split(keyword)
-                target = parts[0].strip() or parts[1].strip().split()[0]
-                reference = None
-                if len(parts) > 1 and parts[1].strip():
-                    ref_words = parts[1].strip().split()
-                    if ref_words:
-                        reference = QueryNode(category=ref_words[-1])
-                
-                return GroundingQuery(
-                    raw_query=query,
-                    root=QueryNode(
-                        category=target,
-                        select_constraint=SelectConstraint(
-                            constraint_type=ConstraintType.SUPERLATIVE,
-                            metric=metric,
-                            order=order,
-                            reference=reference,
-                        )
-                    ),
-                    expect_unique=expect_unique
-                )
+                return self._parse_superlative(query, clean, keyword, metric, order, expect_unique)
         
         # Check for spatial relation
         for rel in self.SPATIAL_KEYWORDS:
             if f" {rel} " in clean:
-                parts = clean.split(f" {rel} ", 1)
-                if len(parts) == 2:
-                    target = parts[0].strip().split()[-1]
-                    anchor = parts[1].strip().split()[0]
-                    
-                    return GroundingQuery(
-                        raw_query=query,
-                        root=QueryNode(
-                            category=target,
-                            spatial_constraints=[
-                                SpatialConstraint(
-                                    relation=rel,
-                                    anchors=[QueryNode(category=anchor)]
-                                )
-                            ]
-                        ),
-                        expect_unique=expect_unique
-                    )
+                return self._parse_spatial(query, clean, rel, expect_unique)
         
         # Simple single object query
-        words = clean.split()
         category = words[-1] if words else "object"
         attributes = words[:-1] if len(words) > 1 else []
         
@@ -452,6 +435,185 @@ class SimpleQueryParser:
                 attributes=attributes
             ),
             expect_unique=expect_unique
+        )
+    
+    def _parse_between(self, query: str, clean: str, expect_unique: bool) -> GroundingQuery:
+        """Parse 'X between Y and Z' pattern."""
+        import re
+        match = re.search(r'(\w+)\s+between\s+(\w+)\s+and\s+(\w+)', clean)
+        if match:
+            target = match.group(1)
+            anchor1 = match.group(2)
+            anchor2 = match.group(3)
+            
+            return GroundingQuery(
+                raw_query=query,
+                root=QueryNode(
+                    category=target,
+                    spatial_constraints=[
+                        SpatialConstraint(
+                            relation="between",
+                            anchors=[
+                                QueryNode(category=anchor1),
+                                QueryNode(category=anchor2),
+                            ]
+                        )
+                    ]
+                ),
+                expect_unique=expect_unique
+            )
+        
+        # Fallback
+        return GroundingQuery(
+            raw_query=query,
+            root=QueryNode(category=clean.split()[0]),
+            expect_unique=expect_unique
+        )
+    
+    def _parse_ordinal(
+        self, query: str, clean: str, ordinal: str, position: int, expect_unique: bool
+    ) -> GroundingQuery:
+        """Parse ordinal patterns like 'second chair from the left'."""
+        words = clean.split()
+        ordinal_idx = words.index(ordinal)
+        
+        # Get target (word after ordinal)
+        target = words[ordinal_idx + 1] if ordinal_idx + 1 < len(words) else "object"
+        
+        # Determine ordering axis
+        if "left" in clean or "right" in clean:
+            metric = "x_position"
+            order = "asc" if "left" in clean else "desc"
+        elif "top" in clean or "bottom" in clean:
+            metric = "height"
+            order = "desc" if "top" in clean else "asc"
+        else:
+            metric = "x_position"
+            order = "asc"
+        
+        return GroundingQuery(
+            raw_query=query,
+            root=QueryNode(
+                category=target,
+                select_constraint=SelectConstraint(
+                    constraint_type=ConstraintType.ORDINAL,
+                    metric=metric,
+                    order=order,
+                    position=position,
+                )
+            ),
+            expect_unique=expect_unique
+        )
+    
+    def _parse_superlative(
+        self, query: str, clean: str, keyword: str, metric: str, order: str, expect_unique: bool
+    ) -> GroundingQuery:
+        """Parse superlative patterns like 'largest book on shelf' or 'sofa nearest door'."""
+        # Split by the superlative keyword
+        parts = clean.split(keyword, 1)
+        before = parts[0].strip()
+        after = parts[1].strip() if len(parts) > 1 else ""
+        
+        # Determine target and reference
+        if metric == "distance":
+            # Pattern: "X nearest Y" -> target=X, reference=Y
+            target = before.split()[-1] if before else after.split()[0]
+            ref_words = after.split()
+            reference = QueryNode(category=ref_words[-1]) if ref_words else None
+            
+            # Check for spatial constraint in between
+            spatial_constraint = None
+            for rel in self.SPATIAL_KEYWORDS:
+                if f" {rel} " in after:
+                    rel_parts = after.split(f" {rel} ", 1)
+                    if len(rel_parts) == 2:
+                        anchor = rel_parts[1].split()[0]
+                        spatial_constraint = SpatialConstraint(
+                            relation=rel,
+                            anchors=[QueryNode(category=anchor)]
+                        )
+                        break
+            
+            return GroundingQuery(
+                raw_query=query,
+                root=QueryNode(
+                    category=target,
+                    spatial_constraints=[spatial_constraint] if spatial_constraint else [],
+                    select_constraint=SelectConstraint(
+                        constraint_type=ConstraintType.SUPERLATIVE,
+                        metric=metric,
+                        order=order,
+                        reference=reference,
+                    )
+                ),
+                expect_unique=expect_unique
+            )
+        else:
+            # Pattern: "largest X on Y" -> target=X, spatial=on Y, select=largest
+            target = after.split()[0] if after else "object"
+            
+            # Check for spatial constraint
+            spatial_constraint = None
+            remaining = " ".join(after.split()[1:]) if after else ""
+            for rel in self.SPATIAL_KEYWORDS:
+                if f" {rel} " in remaining or remaining.startswith(f"{rel} "):
+                    if remaining.startswith(f"{rel} "):
+                        anchor = remaining.split()[1] if len(remaining.split()) > 1 else ""
+                    else:
+                        rel_parts = remaining.split(f" {rel} ", 1)
+                        anchor = rel_parts[1].split()[0] if len(rel_parts) > 1 else ""
+                    if anchor:
+                        spatial_constraint = SpatialConstraint(
+                            relation=rel,
+                            anchors=[QueryNode(category=anchor)]
+                        )
+                    break
+            
+            return GroundingQuery(
+                raw_query=query,
+                root=QueryNode(
+                    category=target,
+                    spatial_constraints=[spatial_constraint] if spatial_constraint else [],
+                    select_constraint=SelectConstraint(
+                        constraint_type=ConstraintType.SUPERLATIVE,
+                        metric=metric,
+                        order=order,
+                    )
+                ),
+                expect_unique=expect_unique
+            )
+    
+    def _parse_spatial(self, query: str, clean: str, rel: str, expect_unique: bool) -> GroundingQuery:
+        """Parse simple spatial patterns like 'pillow on sofa'."""
+        parts = clean.split(f" {rel} ", 1)
+        if len(parts) == 2:
+            target_words = parts[0].strip().split()
+            target = target_words[-1] if target_words else "object"
+            attributes = target_words[:-1] if len(target_words) > 1 else []
+            
+            anchor_words = parts[1].strip().split()
+            anchor = anchor_words[0] if anchor_words else "object"
+            
+            return GroundingQuery(
+                raw_query=query,
+                root=QueryNode(
+                    category=target,
+                    attributes=attributes,
+                    spatial_constraints=[
+                        SpatialConstraint(
+                            relation=rel,
+                            anchors=[QueryNode(category=anchor)]
+                        )
+                    ]
+                ),
+                expect_unique=True
+            )
+        
+        # Fallback
+        return GroundingQuery(
+            raw_query=query,
+            root=QueryNode(category=clean.split()[0] if clean else "object"),
+            expect_unique=True
         )
 
 
