@@ -4,11 +4,9 @@ End-to-End Query Test with Step-by-Step Visualization.
 
 Outputs for each query:
 - query_name/
-  ├── 00_all_candidates.ply          (所有候选物体 - 白色)
-  ├── 01_category_filtered.ply       (类别过滤后 - 蓝色)
-  ├── 02_spatial_filtered.ply        (空间过滤后 - 黄色)
-  ├── 03_final_result.ply            (最终结果 - 红色高亮)
-  ├── filtering_process.ply          (全过程合并 - 多色)
+  ├── 00_initial_candidates.ply      (初始候选 - 蓝色)
+  ├── 01_final_candidates.ply        (最终结果 - 红色)
+  ├── final_combined.ply             (合并展示 - 多色)
   └── keyframes/
       └── *.jpg
 """
@@ -37,7 +35,7 @@ logger.add(sys.stderr, level="INFO", format="{time:HH:mm:ss} | {level:7} | {mess
 COLORS = {
     'white': (200, 200, 200),      # All objects (dimmed)
     'gray': (80, 80, 80),          # Filtered out objects
-    'blue': (50, 100, 255),        # Category candidates
+    'blue': (50, 100, 255),        # Initial candidates
     'yellow': (255, 200, 50),      # After spatial filter
     'orange': (255, 150, 50),      # After quick filter
     'green': (50, 255, 100),       # After select constraint
@@ -203,7 +201,9 @@ def save_filtering_steps(
             count = len(step.object_ids)
             f.write(f"{i:02d}. {step.step_name}: {color_name} ({count} objects)\n")
             f.write(f"    {step.description}\n")
-        f.write(f"\nFinal Result: red ({len(vis.final_ids)} objects)\n")
+        has_final_step = any(step.step_name == "final_candidates" for step in vis.steps)
+        if not has_final_step:
+            f.write(f"\nFinal Result: red ({len(vis.final_ids)} objects)\n")
     
     logger.info(f"Saved legend: {legend_path.name}")
 
@@ -256,11 +256,9 @@ def execute_with_tracking(
     query_result,
     objects: List[SceneObject],
 ) -> Tuple[Any, QueryVisualization]:
-    """Execute query and track filtering steps."""
+    """Execute query and track initial/final candidates."""
     from conceptgraph.query_scene.query_executor import QueryExecutor
     from conceptgraph.query_scene.spatial_relations import SpatialRelationChecker
-    
-    vis = QueryVisualization(query=query_result.raw_query)
     
     # Create executor
     executor = QueryExecutor(
@@ -269,82 +267,31 @@ def execute_with_tracking(
         use_quick_filters=True
     )
     
-    # Manual execution to track steps
+    vis = QueryVisualization(query=query_result.raw_query)
+
+    # Initial candidates: category match before full execution
     root = query_result.root
-    
-    # Step 1: Category filter
-    category_matches = executor._find_by_category(root.category)
-    category_ids = set(obj.obj_id for obj in category_matches)
+    initial_candidates = executor._find_by_category(root.category)
+    initial_ids = set(obj.obj_id for obj in initial_candidates)
     vis.steps.append(FilteringStep(
-        step_name="category_filter",
-        description=f"Objects matching category '{root.category}'",
-        object_ids=category_ids,
+        step_name="initial_candidates",
+        description=f"Initial candidates for category '{root.category}'",
+        object_ids=initial_ids,
         color=COLORS['blue']
     ))
-    
-    candidates = category_matches
-    current_ids = category_ids
-    
-    # Step 2+: Spatial constraints
-    for i, constraint in enumerate(root.spatial_constraints):
-        # Find anchors
-        anchor_objects = []
-        for anchor_node in constraint.anchors:
-            anchor_result = executor._execute_node(anchor_node)
-            anchor_objects.extend(anchor_result.matched_objects)
-        
-        anchor_ids = set(obj.obj_id for obj in anchor_objects)
-        vis.steps.append(FilteringStep(
-            step_name=f"anchor_{constraint.relation}",
-            description=f"Anchor objects for '{constraint.relation}': {[a.category for a in constraint.anchors]}",
-            object_ids=anchor_ids,
-            color=COLORS['green']
-        ))
-        
-        # Apply spatial filter
-        filtered, scores = executor._apply_spatial_constraint(candidates, constraint)
-        filtered_ids = set(obj.obj_id for obj in filtered)
-        
-        vis.steps.append(FilteringStep(
-            step_name=f"spatial_{constraint.relation}",
-            description=f"After spatial filter '{constraint.relation}': {len(filtered)} objects",
-            object_ids=filtered_ids,
-            color=COLORS['yellow']
-        ))
-        
-        candidates = filtered
-        current_ids = filtered_ids
-    
-    # Step 3: Select constraint
-    if root.select_constraint and candidates:
-        scores = {obj.obj_id: 1.0 for obj in candidates}
-        selected, new_scores = executor._apply_select_constraint(
-            candidates, scores, root.select_constraint
-        )
-        selected_ids = set(obj.obj_id for obj in selected)
-        
-        sc = root.select_constraint
-        vis.steps.append(FilteringStep(
-            step_name="select_constraint",
-            description=f"After {sc.constraint_type.value} selection ({sc.metric}, {sc.order})",
-            object_ids=selected_ids,
-            color=COLORS['orange']
-        ))
-        
-        candidates = selected
-        current_ids = selected_ids
-    
-    # Final result
-    vis.final_ids = set(obj.obj_id for obj in candidates)
-    
-    # Create proper result
-    from conceptgraph.query_scene.query_executor import ExecutionResult
-    result = ExecutionResult(
-        node_id=root.node_id,
-        matched_objects=candidates,
-        scores={obj.obj_id: 1.0 for obj in candidates}
-    )
-    
+
+    # Full execution path
+    result = executor.execute(query_result)
+
+    # Final candidates
+    vis.final_ids = set(obj.obj_id for obj in result.matched_objects)
+    vis.steps.append(FilteringStep(
+        step_name="final_candidates",
+        description="Final matched objects after full execution",
+        object_ids=vis.final_ids,
+        color=COLORS['red']
+    ))
+
     return result, vis
 
 
@@ -400,8 +347,8 @@ def run_e2e_test(
         logger.error(f"Parse failed: {e}")
         return result
     
-    # Execute with tracking
-    logger.info("[Step 2] Executing query (with step tracking)...")
+    # Execute with QueryExecutor.execute
+    logger.info("[Step 2] Executing query (QueryExecutor.execute)...")
     try:
         exec_result, vis = execute_with_tracking(parsed, objects)
         result["execute_success"] = True
