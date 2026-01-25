@@ -30,8 +30,15 @@ def _get_langchain_chat_model(*args, **kwargs):
     return get_langchain_chat_model(*args, **kwargs)
 
 
+# Supported spatial relations (for quick coordinate-based filtering)
+# Import from query_structures to ensure consistency
+try:
+    from .query_structures import SUPPORTED_RELATIONS_STR
+except ImportError:
+    SUPPORTED_RELATIONS_STR = "on, above, below, left_of, right_of, in_front_of, behind, near, next_to, beside, inside, between"
+
 # System prompt for query parsing
-QUERY_PARSER_SYSTEM_PROMPT = """You are a spatial query parser for 3D scene understanding.
+QUERY_PARSER_SYSTEM_PROMPT = f"""You are a spatial query parser for 3D scene understanding.
 Your task is to parse natural language queries about objects in a scene into a structured JSON format.
 
 The output must be a valid GroundingQuery with the following structure:
@@ -46,7 +53,10 @@ Each QueryNode has:
 - select_constraint: Optional selection like "nearest", "largest", "second" (select phase)
 
 SpatialConstraint structure:
-- relation: One of: on, near, beside, above, below, in_front_of, behind, left_of, right_of, inside, between
+- relation: PREFERRED to be one of these predefined values: {SUPPORTED_RELATIONS_STR}
+  (These relations support fast coordinate-based filtering. Map synonyms: "on top of"→"on", "under"→"below", "close to"→"near")
+  If the query doesn't contain a clear spatial relation, or uses an uncommon relation (e.g., "hanging from", "leaning against"),
+  you may use the original wording - the system will skip quick filtering and use full spatial reasoning.
 - anchors: List of reference QueryNode objects (1 for most relations, 2 for "between")
 
 SelectConstraint structure (for superlative/ordinal):
@@ -58,11 +68,13 @@ SelectConstraint structure (for superlative/ordinal):
 
 IMPORTANT RULES:
 1. Map synonyms to scene categories: pillow→throw_pillow, couch→sofa, lamp→table_lamp
-2. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
-3. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
-4. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
-5. Spatial constraints are filters (AND logic), select_constraint is for final selection
-6. Keep structure flat when possible - don't over-nest"""
+2. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
+3. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
+4. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
+5. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
+6. Spatial constraints are filters (AND logic), select_constraint is for final selection
+7. Keep structure flat when possible - don't over-nest
+8. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is"""
 
 
 def get_few_shot_examples() -> str:

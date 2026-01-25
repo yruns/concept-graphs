@@ -48,6 +48,163 @@ class ConstraintType(str, Enum):
     ORDINAL = "ordinal"
 
 
+class SpatialRelation(str, Enum):
+    """
+    Predefined spatial relations that support quick coordinate-based filtering.
+    
+    These relations are specifically chosen because they can be evaluated
+    using simple coordinate comparisons:
+    
+    Vertical Relations (Z-axis):
+    - ON: target.z > anchor.z (target is on top of anchor)
+    - ABOVE: target.z > anchor.z (target is above anchor)
+    - BELOW: target.z < anchor.z (target is below anchor)
+    
+    Horizontal Relations (X-axis):
+    - LEFT_OF: target.x < anchor.x
+    - RIGHT_OF: target.x > anchor.x
+    
+    Horizontal Relations (Y-axis):
+    - IN_FRONT_OF: target.y > anchor.y (depends on coordinate system)
+    - BEHIND: target.y < anchor.y
+    
+    Distance Relations:
+    - NEAR: distance(target, anchor) < threshold
+    - NEXT_TO: distance(target, anchor) < threshold (stricter)
+    - BESIDE: similar to NEXT_TO
+    
+    Containment/Multi-object:
+    - INSIDE: target is within anchor's bounding box
+    - BETWEEN: target is between two anchors
+    """
+    
+    # Vertical relations (can filter by Z coordinate)
+    ON = "on"
+    ABOVE = "above"
+    BELOW = "below"
+    
+    # Horizontal relations (can filter by X/Y coordinates)
+    LEFT_OF = "left_of"
+    RIGHT_OF = "right_of"
+    IN_FRONT_OF = "in_front_of"
+    BEHIND = "behind"
+    
+    # Distance relations (can filter by Euclidean distance)
+    NEAR = "near"
+    NEXT_TO = "next_to"
+    BESIDE = "beside"
+    
+    # Containment/Multi-object
+    INSIDE = "inside"
+    BETWEEN = "between"
+    
+    @classmethod
+    def from_string(cls, s: str) -> Optional["SpatialRelation"]:
+        """
+        Convert a string to SpatialRelation, handling aliases.
+        
+        Returns None if the relation is not in the predefined list,
+        meaning quick filtering cannot be applied.
+        
+        Examples:
+            SpatialRelation.from_string("on top of") -> SpatialRelation.ON
+            SpatialRelation.from_string("under") -> SpatialRelation.BELOW
+            SpatialRelation.from_string("hanging from") -> None  # Not predefined
+        """
+        if not s:
+            return None
+            
+        # Normalize
+        s_lower = s.lower().strip().replace(" ", "_")
+        
+        # Direct match
+        try:
+            return cls(s_lower)
+        except ValueError:
+            pass
+        
+        # Alias mapping
+        aliases = {
+            # ON variants
+            "on_top_of": cls.ON,
+            "upon": cls.ON,
+            "atop": cls.ON,
+            "resting_on": cls.ON,
+            
+            # ABOVE variants
+            "over": cls.ABOVE,
+            "higher_than": cls.ABOVE,
+            
+            # BELOW variants
+            "under": cls.BELOW,
+            "beneath": cls.BELOW,
+            "underneath": cls.BELOW,
+            "lower_than": cls.BELOW,
+            
+            # LEFT_OF variants
+            "left": cls.LEFT_OF,
+            "to_the_left_of": cls.LEFT_OF,
+            
+            # RIGHT_OF variants
+            "right": cls.RIGHT_OF,
+            "to_the_right_of": cls.RIGHT_OF,
+            
+            # IN_FRONT_OF variants
+            "front": cls.IN_FRONT_OF,
+            "facing": cls.IN_FRONT_OF,
+            
+            # BEHIND variants
+            "back": cls.BEHIND,
+            "back_of": cls.BEHIND,
+            "in_back_of": cls.BEHIND,
+            
+            # NEAR variants
+            "close_to": cls.NEAR,
+            "nearby": cls.NEAR,
+            
+            # NEXT_TO variants
+            "adjacent_to": cls.NEXT_TO,
+            "adjacent": cls.NEXT_TO,
+            
+            # INSIDE variants
+            "in": cls.INSIDE,
+            "within": cls.INSIDE,
+            "contained_in": cls.INSIDE,
+            
+            # BETWEEN variants
+            "in_between": cls.BETWEEN,
+        }
+        
+        if s_lower in aliases:
+            return aliases[s_lower]
+        
+        # Unknown relation - return None (no quick filter available)
+        return None
+    
+    def supports_quick_filter(self) -> bool:
+        """Check if this relation supports quick coordinate-based filtering."""
+        # All predefined relations support quick filtering
+        return True
+    
+    def get_filter_type(self) -> str:
+        """Get the type of quick filter for this relation."""
+        if self in [SpatialRelation.ON, SpatialRelation.ABOVE, SpatialRelation.BELOW]:
+            return "vertical"
+        elif self in [SpatialRelation.LEFT_OF, SpatialRelation.RIGHT_OF, 
+                      SpatialRelation.IN_FRONT_OF, SpatialRelation.BEHIND]:
+            return "horizontal"
+        elif self in [SpatialRelation.NEAR, SpatialRelation.NEXT_TO, SpatialRelation.BESIDE]:
+            return "distance"
+        elif self in [SpatialRelation.INSIDE, SpatialRelation.BETWEEN]:
+            return "containment"
+        return "unknown"
+
+
+# List of supported relations for prompt
+SUPPORTED_RELATIONS = [r.value for r in SpatialRelation]
+SUPPORTED_RELATIONS_STR = ", ".join(SUPPORTED_RELATIONS)
+
+
 class QueryNode(BaseModel):
     """
     Recursive query node representing an object or object set.
@@ -115,14 +272,18 @@ class SpatialConstraint(BaseModel):
     The `anchors` list typically contains one object, but can contain
     multiple for relations like "between A and B".
     
+    The relation field accepts any string from the LLM, but provides:
+    - `relation_enum`: Normalized SpatialRelation enum for quick filtering
+    - `supports_quick_filter`: Whether coordinate-based filtering is available
+    
     Attributes:
-        relation: Spatial relation word (e.g., "on", "near", "between")
+        relation: Spatial relation word from LLM (e.g., "on", "on top of", "near")
         anchors: List of reference objects (usually 1, can be 2 for "between")
     """
     
     relation: str = Field(
         ...,
-        description="Spatial relation: on, near, beside, above, below, between, in_front_of, behind, left_of, right_of, inside"
+        description=f"Spatial relation. MUST be one of: {SUPPORTED_RELATIONS_STR}"
     )
     
     anchors: List[QueryNode] = Field(
@@ -140,6 +301,44 @@ class SpatialConstraint(BaseModel):
             ]
         }
     }
+    
+    @property
+    def relation_enum(self) -> Optional[SpatialRelation]:
+        """
+        Get the normalized SpatialRelation enum.
+        
+        Converts LLM output like "on top of" to SpatialRelation.ON.
+        Returns None if the relation is not in the predefined list,
+        meaning this constraint cannot use quick coordinate-based filtering.
+        
+        Examples:
+            "on top of" -> SpatialRelation.ON
+            "near" -> SpatialRelation.NEAR
+            "hanging from" -> None (not predefined, no quick filter)
+        """
+        return SpatialRelation.from_string(self.relation)
+    
+    @property
+    def supports_quick_filter(self) -> bool:
+        """
+        Check if this relation supports quick coordinate-based filtering.
+        
+        Returns True only if the relation is in the predefined list.
+        For unknown/custom relations, returns False and the system
+        will skip quick filtering and use full spatial relation checking.
+        """
+        rel = self.relation_enum
+        return rel is not None and rel.supports_quick_filter()
+    
+    @property
+    def filter_type(self) -> Optional[str]:
+        """
+        Get the filter type (vertical, horizontal, distance, containment).
+        
+        Returns None if the relation is not predefined.
+        """
+        rel = self.relation_enum
+        return rel.get_filter_type() if rel is not None else None
 
 
 class SelectConstraint(BaseModel):

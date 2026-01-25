@@ -293,7 +293,7 @@ def main():
     print(f"Scene categories: {len(MOCK_SCENE_CATEGORIES)} categories")
     
     # Test simple parser
-    test_simple_parser(TEST_QUERIES)
+    # test_simple_parser(TEST_QUERIES)
     
     # Test LLM parser if model provided
     if args.llm_model and not args.simple_only:
