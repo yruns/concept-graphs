@@ -140,7 +140,7 @@ if __name__ == "__main__":
     print()
     
     # Test with specific model
-    print("Testing gemini-2.5-pro...")
-    llm_gemini = get_langchain_chat_model("gemini-2.5-pro")
+    print("Testing gemini-3-flash-preview...")
+    llm_gemini = get_langchain_chat_model("gemini-3-flash-preview")
     response = llm_gemini.invoke("What is 2+2?")
     print(f"Response: {response.content}")

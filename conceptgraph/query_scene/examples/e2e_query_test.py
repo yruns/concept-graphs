@@ -423,7 +423,7 @@ def run_e2e_test(
     logger.info("[Step 1] Parsing query...")
     try:
         parser = QueryParser(
-            llm_model="gpt-4o-mini",
+            llm_model="gemini-3-flash-preview",
             scene_categories=scene_categories,
             temperature=0.0
         )
@@ -508,13 +508,33 @@ def main():
     logger.info(f"Loaded {len(objects)} objects")
     scene_categories = list(categories.keys())
     
-    # Test queries
+    # Test queries - designed to cover various complexity levels
     test_queries = [
-        ("the pillow on the armchair", "1. Simple spatial (ON)"),
-        ("the lamp on the table near the window", "2. Nested spatial (ON + NEAR)"),
-        ("the largest pillow", "3. Superlative (SIZE)"),
-        ("the second stool from the left", "4. Ordinal (POSITION)"),
-        ("the pillow on the armchair nearest the door", "5. Complex (SPATIAL + SUPERLATIVE)"),
+        # Basic queries
+        ("the pillow on the armchair", "01. Simple spatial (ON)"),
+        ("the largest pillow", "02. Superlative (SIZE)"),
+        
+        # Multi-level nesting
+        ("the lamp on the table near the sofa", "03. Two-level nesting (ON + NEAR)"),
+        ("the pillow on the armchair nearest the door", "04. Anchor superlative (ON + NEAREST)"),
+        
+        # Complex superlatives
+        ("the smallest pillow on the largest armchair", "05. Dual superlative (target + anchor)"),
+        ("the second stool from the left", "06. Ordinal selection"),
+        
+        # Multiple spatial constraints on single target
+        ("the lamp near the sofa and near the window", "07. Multi-anchor (AND logic)"),
+        
+        # Between relation (two anchors)
+        ("the pillow between the sofa and the armchair", "08. Between relation"),
+        
+        # Three-level nesting
+        ("the lamp on the table near the sofa closest to the door", "09. Three-level nesting"),
+        
+        # Complex combinations
+        ("all pillows on armchairs", "10. Multi-target (all)"),
+        ("the red pillow on the sofa", "11. Attribute + spatial"),
+        ("the second largest lamp on a table", "12. Ordinal superlative + spatial"),
     ]
     
     all_results = []
