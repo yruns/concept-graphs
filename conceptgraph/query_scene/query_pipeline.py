@@ -24,23 +24,32 @@ class QueryScenePipeline:
         scene: QuerySceneRepresentation,
         indices: Optional[SceneIndices] = None,
         descriptions: Optional[Dict[int, ObjectDescriptions]] = None,
-        llm_url: str = "http://localhost:11434",
-        llm_model: str = "llama3.1:8b",
+        llm_model: str = None,
         vlm_url: str = "http://localhost:11434",
         vlm_model: str = "llava:7b",
         use_vlm: bool = True,
     ):
+        """Initialize QueryScenePipeline.
+        
+        Args:
+            scene: Scene representation
+            indices: Pre-built scene indices (optional)
+            descriptions: Pre-generated object descriptions (optional)
+            llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+            vlm_url: VLM server URL
+            vlm_model: VLM model name
+            use_vlm: Whether to use VLM for inference
+        """
         logger.info("Initializing QueryScenePipeline")
         self.scene = scene
         self.indices = indices
         self.descriptions = descriptions or {}
-        self.llm_url = llm_url
         self.llm_model = llm_model
         self.use_vlm = use_vlm
         
-        logger.debug(f"  use_vlm={use_vlm}, llm_url={llm_url}")
+        logger.debug(f"  use_vlm={use_vlm}, llm_model={llm_model}")
         
-        self.parser = QueryParser(llm_url, llm_model)
+        self.parser = QueryParser(llm_model=llm_model)
         self.vlm_client = VLMClient(vlm_url, vlm_model)
         self.vlm_constructor = VLMInputConstructor()
         

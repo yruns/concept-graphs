@@ -47,16 +47,10 @@ def parse_args():
         help="Output directory for visualization (default: scene_path/query_results)",
     )
     parser.add_argument(
-        "--llm_url",
-        type=str,
-        default=None,
-        help="LLM server URL (default: LLM_BASE_URL env var)",
-    )
-    parser.add_argument(
         "--llm_model",
         type=str,
-        default=None,
-        help="LLM model name (default: LLM_MODEL env var)",
+        required=True,
+        help="LLM model name (required). Options: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview",
     )
     return parser.parse_args()
 
@@ -71,16 +65,10 @@ def main():
     output_dir = Path(args.output_dir) if args.output_dir else scene_path / "query_results"
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Build kwargs for optional LLM config
-    kwargs = {}
-    if args.llm_url:
-        kwargs["llm_url"] = args.llm_url
-    if args.llm_model:
-        kwargs["llm_model"] = args.llm_model
-    
-    # Load scene
+    # Load scene with required LLM model
     logger.info(f"Loading scene from: {scene_path}")
-    selector = KeyframeSelector.from_scene_path(scene_path, **kwargs)
+    logger.info(f"Using LLM model: {args.llm_model}")
+    selector = KeyframeSelector.from_scene_path(scene_path, llm_model=args.llm_model)
     
     # Run query
     logger.info(f"Running query: '{args.query}'")

@@ -45,14 +45,20 @@ def main():
     print(f"\nUsing pcd file: {pcd_file.name}")
     
     # Create pipeline
-    print("\nLoading scene and building indices...")
+    # LLM model must be explicitly specified
+    llm_model = os.environ.get("LLM_MODEL")
+    if not llm_model:
+        print("Error: LLM_MODEL environment variable must be set.")
+        print("Available models: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview")
+        return
+    
+    print(f"\nLoading scene and building indices (using LLM: {llm_model})...")
     try:
         pipeline = QueryScenePipeline.from_scene(
             str(scene_path),
             str(pcd_file),
             stride=5,
-            llm_url=os.environ.get("LLM_BASE_URL", "http://10.21.231.7:8006"),
-            llm_model=os.environ.get("LLM_MODEL", "gemini-2.0-flash"),
+            llm_model=llm_model,
         )
     except Exception as e:
         print(f"Error loading scene: {e}")

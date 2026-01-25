@@ -110,8 +110,7 @@ class KeyframeSelector:
         pcd_file: Optional[Path] = None,
         affordance_file: Optional[Path] = None,
         stride: int = 5,
-        llm_url: Optional[str] = None,
-        llm_model: Optional[str] = None,
+        llm_model: str = None,
     ):
         """Initialize keyframe selector.
         
@@ -120,14 +119,14 @@ class KeyframeSelector:
             pcd_file: Path to .pkl.gz file with 3D objects
             affordance_file: Path to object_affordances.json (optional)
             stride: Frame stride used during mapping
-            llm_url: LLM server URL (defaults to LLM_BASE_URL env var)
-            llm_model: LLM model name (defaults to LLM_MODEL env var)
+            llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
         """
         self.scene_path = Path(scene_path)
         self.stride = stride
-        # Use environment variables or defaults
-        self.llm_url = llm_url or os.environ.get("LLM_BASE_URL", "http://10.21.231.7:8006")
-        self.llm_model = llm_model or os.environ.get("LLM_MODEL", "gpt-4o-2024-08-06")
+        self.llm_model = llm_model
+        
+        # Initialize LLM client (will be created on first use)
+        self._llm_client = None
         
         # Data containers
         self.objects: List[SceneObject] = []
@@ -670,10 +669,10 @@ class KeyframeSelector:
     
     def _parse_with_llm(self, query: str) -> Tuple[str, Optional[str], Optional[str]]:
         """Parse query using LLM with scene category context."""
-        from conceptgraph.llava.unified_client import chat_completions
+        from conceptgraph.utils.llm_client import get_langchain_chat_model
         
         category_list = ", ".join(sorted(set(self.scene_categories)))
-        logger.info(f"[LLM] Calling {self.llm_model} at {self.llm_url} for query parsing...")
+        logger.info(f"[LLM] Calling {self.llm_model} for query parsing...")
         
         prompt = f'''You are a query parser. Parse this query and return ONLY a JSON object, no explanation.
 
@@ -694,15 +693,12 @@ Examples:
 
 RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         
-        # Use unified_client for LLM call
-        result = chat_completions(
-            messages=[{"role": "user", "content": prompt}],
-            model=self.llm_model,
-            base_url=self.llm_url,
-            max_tokens=2048,
-            timeout=30.0,
-        )
-        response = result["choices"][0]["message"]["content"]
+        # Use llm_client for LLM call
+        if self._llm_client is None:
+            self._llm_client = get_langchain_chat_model(deployment_name=self.llm_model)
+        
+        result = self._llm_client.invoke(prompt)
+        response = result.content
         
         # Parse JSON from response
         logger.debug(f"[LLM] Raw response: {response[:200]}...")

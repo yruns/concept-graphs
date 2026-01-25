@@ -8,7 +8,6 @@ import json
 import re
 from typing import Optional
 from loguru import logger
-import requests
 from .data_structures import QueryInfo, QueryType
 
 
@@ -31,11 +30,16 @@ class QueryParser:
     All target and anchor outputs are in English for CLIP compatibility.
     """
     
-    def __init__(self, llm_url: str = "http://localhost:11434", 
-                 llm_model: str = "llama3.1:8b", use_llm: bool = True):
-        self.llm_url = llm_url
+    def __init__(self, llm_model: str, use_llm: bool = True):
+        """Initialize QueryParser.
+        
+        Args:
+            llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+            use_llm: Whether to use LLM for parsing (default: True)
+        """
         self.llm_model = llm_model
         self.use_llm = use_llm
+        self._llm_client = None
     
     def parse(self, query: str) -> QueryInfo:
         """Parse query, always output English target/anchor."""
@@ -48,6 +52,8 @@ class QueryParser:
     
     def _parse_with_llm(self, query: str) -> QueryInfo:
         """Parse using LLM with explicit English output requirement."""
+        from conceptgraph.utils.llm_client import get_langchain_chat_model
+        
         prompt = f'''Parse this query and return JSON. ALL outputs must be in English.
 
 Query: "{query}"
@@ -64,7 +70,12 @@ Examples:
 
 Output only the JSON, no explanation.'''
         
-        response = self._call_llm(prompt)
+        # Use llm_client for LLM call
+        if self._llm_client is None:
+            self._llm_client = get_langchain_chat_model(deployment_name=self.llm_model)
+        
+        result = self._llm_client.invoke(prompt)
+        response = result.content
         logger.debug(f"LLM response: {response[:200]}")
         
         match = re.search(r'\{[^{}]+\}', response, re.DOTALL)
@@ -86,32 +97,6 @@ Output only the JSON, no explanation.'''
             )
         
         return self._parse_with_regex(query)
-    
-    def _call_llm(self, prompt: str) -> str:
-        """Call LLM API."""
-        try:
-            r = requests.post(
-                f"{self.llm_url}/v1/chat/completions",
-                json={"model": self.llm_model, "messages": [{"role": "user", "content": prompt}]},
-                timeout=30
-            )
-            if r.ok:
-                return r.json()["choices"][0]["message"]["content"]
-        except Exception:
-            pass
-        
-        try:
-            r = requests.post(
-                f"{self.llm_url}/api/generate",
-                json={"model": self.llm_model, "prompt": prompt, "stream": False},
-                timeout=30
-            )
-            if r.ok:
-                return r.json().get("response", "")
-        except Exception:
-            pass
-        
-        raise ConnectionError("LLM unavailable")
     
     def _parse_with_regex(self, query: str) -> QueryInfo:
         """Fallback regex parsing for English queries."""
@@ -157,5 +142,14 @@ Output only the JSON, no explanation.'''
             use_bev=use_bev,
         )
 
-def parse_query(query: str, llm_url: str = None, llm_model: str = None) -> QueryInfo:
-    return QueryParser(llm_url or "http://localhost:11434", llm_model or "llama3.1:8b").parse(query)
+def parse_query(query: str, llm_model: str) -> QueryInfo:
+    """Parse a query using the specified LLM model.
+    
+    Args:
+        query: Natural language query
+        llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+    
+    Returns:
+        QueryInfo with parsed target, anchor, and relation
+    """
+    return QueryParser(llm_model=llm_model).parse(query)
