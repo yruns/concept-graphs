@@ -1,3 +1,16 @@
 {
-    "remote.autoForwardPortsFallback": 0
+    "remote.autoForwardPortsFallback": 0,
+    "files.exclude": {
+        "gradslam": true,
+        "Grounded-Segment-Anything": true,
+        "lseg_feature_extraction": true,
+        "model_backup": true,
+        "chamferdist": true,
+        "datasets": true,
+        "**/__pycache__": true,
+        "LICENSE": true,
+        "setup.py": true,
+        "environment.yml": true,
+        "env_vars.bash.template": true
+    }
 }
