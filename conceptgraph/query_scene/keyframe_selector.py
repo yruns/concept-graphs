@@ -699,8 +699,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             messages=[{"role": "user", "content": prompt}],
             model=self.llm_model,
             base_url=self.llm_url,
-            temperature=0.0,
-            max_tokens=256,
+            max_tokens=2048,
             timeout=30.0,
         )
         response = result["choices"][0]["message"]["content"]
