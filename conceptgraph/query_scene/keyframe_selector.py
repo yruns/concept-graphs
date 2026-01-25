@@ -9,10 +9,14 @@ Key Features:
 2. CLIP-based semantic retrieval: Handles synonyms and semantic similarity
 3. Visibility-based view selection: Finds views that best observe target objects
 4. Joint coverage optimization: Selects views covering both target and anchor objects
+5. Nested spatial query support: Complex queries like "pillow on sofa nearest door"
 
 Usage:
     selector = KeyframeSelector.from_scene_path("/path/to/scene")
     result = selector.select_keyframes("the pillow on the sofa", k=3)
+    
+    # For nested queries, use select_keyframes_v2:
+    result = selector.select_keyframes_v2("the pillow on the sofa nearest the door", k=3)
     
     # result.keyframe_indices: [42, 67, 89]
     # result.keyframe_paths: [Path("frame000042.jpg"), ...]
@@ -40,6 +44,12 @@ try:
 except ImportError:
     HAS_CLIP = False
     logger.warning("open_clip not available, CLIP features will not work")
+
+# Import nested query modules
+from .query_structures import GroundingQuery, QueryNode, SpatialConstraint, SelectConstraint
+from .query_parser import QueryParser
+from .query_executor import QueryExecutor, ExecutionResult
+from .spatial_relations import SpatialRelationChecker, check_relation
 
 
 @dataclass
@@ -152,6 +162,11 @@ class KeyframeSelector:
         # CLIP model (lazy loaded)
         self._clip_model = None
         self._clip_tokenizer = None
+        
+        # Query parsing components (lazy loaded)
+        self._query_parser: Optional[QueryParser] = None
+        self._query_executor: Optional[QueryExecutor] = None
+        self._relation_checker: Optional[SpatialRelationChecker] = None
         
         # Load data
         self._load_scene(pcd_file, affordance_file)
@@ -944,31 +959,60 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         anchor: SceneObject,
         relation: str,
     ) -> List[SceneObject]:
-        """Filter candidates by spatial relation to anchor."""
-        relation_lower = relation.lower()
+        """Filter candidates by spatial relation to anchor.
         
-        # Determine distance threshold based on relation
-        if "on" in relation_lower:
-            # "on" implies close vertical relation
-            max_horizontal = 0.5
-            max_vertical = 1.0
-        elif "beside" in relation_lower or "near" in relation_lower:
-            max_horizontal = 1.5
-            max_vertical = 1.5
-        else:
-            max_horizontal = 2.0
-            max_vertical = 2.0
+        Uses the SpatialRelationChecker for accurate relation checking.
+        """
+        if self._relation_checker is None:
+            self._relation_checker = SpatialRelationChecker()
         
         filtered = []
         for obj in candidates:
-            diff = obj.centroid - anchor.centroid
-            horizontal_dist = np.linalg.norm(diff[:2])  # x, y
-            vertical_dist = abs(diff[2])  # z
-            
-            if horizontal_dist < max_horizontal and vertical_dist < max_vertical:
-                filtered.append(obj)
+            result = self._relation_checker.check(obj, anchor, relation)
+            if result.satisfies:
+                filtered.append((obj, result.score))
         
-        return filtered if filtered else candidates
+        # Sort by score and return objects
+        if filtered:
+            filtered.sort(key=lambda x: x[1], reverse=True)
+            return [f[0] for f in filtered]
+        
+        # Fallback: return original candidates if none matched
+        logger.warning(f"No candidates matched relation '{relation}', returning all")
+        return candidates
+    
+    def _spatial_filter_multi_anchor(
+        self,
+        candidates: List[SceneObject],
+        anchors: List[SceneObject],
+        relation: str,
+    ) -> List[SceneObject]:
+        """Filter candidates by spatial relation to any of the anchors.
+        
+        Returns candidates that satisfy the relation with at least one anchor.
+        """
+        if self._relation_checker is None:
+            self._relation_checker = SpatialRelationChecker()
+        
+        filtered = []
+        for obj in candidates:
+            best_score = 0.0
+            satisfies_any = False
+            
+            for anchor in anchors:
+                result = self._relation_checker.check(obj, anchor, relation)
+                if result.satisfies:
+                    satisfies_any = True
+                    best_score = max(best_score, result.score)
+            
+            if satisfies_any:
+                filtered.append((obj, best_score))
+        
+        if filtered:
+            filtered.sort(key=lambda x: x[1], reverse=True)
+            return [f[0] for f in filtered]
+        
+        return candidates
     
     def get_image(self, view_id: int) -> Optional[np.ndarray]:
         """Load RGB image for a view."""
@@ -980,6 +1024,169 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         if img is not None:
             return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return None
+    
+    # ========== Nested Query Support (V2) ==========
+    
+    def _get_query_parser(self) -> QueryParser:
+        """Get or create the query parser."""
+        if self._query_parser is None:
+            if self.llm_model is None:
+                raise ValueError("llm_model is required for nested query parsing")
+            self._query_parser = QueryParser(
+                llm_model=self.llm_model,
+                scene_categories=self.scene_categories,
+            )
+        return self._query_parser
+    
+    def _get_query_executor(self) -> QueryExecutor:
+        """Get or create the query executor."""
+        if self._query_executor is None:
+            if self._relation_checker is None:
+                self._relation_checker = SpatialRelationChecker()
+            
+            self._query_executor = QueryExecutor(
+                objects=self.objects,
+                relation_checker=self._relation_checker,
+                clip_features=self.object_features,
+                clip_encoder=self._encode_text if HAS_CLIP else None,
+            )
+        return self._query_executor
+    
+    def parse_query_nested(self, query: str) -> GroundingQuery:
+        """Parse a query into a nested GroundingQuery structure.
+        
+        Supports complex nested queries like:
+        - "the pillow on the sofa nearest the door"
+        - "the red cup on the table in the kitchen"
+        - "the lamp between the sofa and the TV"
+        
+        Args:
+            query: Natural language query
+            
+        Returns:
+            GroundingQuery with nested structure
+        """
+        parser = self._get_query_parser()
+        return parser.parse(query)
+    
+    def execute_query(self, grounding_query: GroundingQuery) -> ExecutionResult:
+        """Execute a parsed grounding query.
+        
+        Args:
+            grounding_query: Parsed GroundingQuery object
+            
+        Returns:
+            ExecutionResult with matched objects
+        """
+        executor = self._get_query_executor()
+        return executor.execute(grounding_query)
+    
+    def select_keyframes_v2(
+        self,
+        query: str,
+        k: int = 3,
+        strategy: str = "joint_coverage",
+    ) -> KeyframeResult:
+        """Select keyframes using nested query parsing (V2).
+        
+        This method supports complex nested queries like:
+        - "the pillow on the sofa nearest the door"
+        - "the largest book on the shelf above the desk"
+        
+        Args:
+            query: Natural language query
+            k: Number of keyframes to select
+            strategy: Selection strategy
+                - "joint_coverage": Maximize coverage of all relevant objects
+                - "target_only": Only consider target objects
+                
+        Returns:
+            KeyframeResult with selected keyframes and metadata
+        """
+        logger.info(f"[V2] Selecting {k} keyframes for: '{query}'")
+        
+        # Step 1: Parse query using nested parser
+        try:
+            grounding_query = self.parse_query_nested(query)
+            logger.info(f"[V2] Parsed query structure: {grounding_query.root.category}")
+        except Exception as e:
+            logger.warning(f"[V2] Nested parsing failed, falling back to simple parsing: {e}")
+            return self.select_keyframes(query, k=k, strategy=strategy)
+        
+        # Step 2: Execute query to find matching objects
+        result = self.execute_query(grounding_query)
+        
+        if result.is_empty:
+            logger.warning(f"[V2] No objects found for query")
+            return KeyframeResult(
+                query=query,
+                target_term=grounding_query.root.category,
+                anchor_term=None,
+                keyframe_indices=[],
+                keyframe_paths=[],
+                target_objects=[],
+                anchor_objects=[],
+                metadata={
+                    "error": "No matching objects",
+                    "grounding_query": grounding_query.model_dump(),
+                }
+            )
+        
+        target_objects = result.matched_objects
+        logger.info(f"[V2] Found {len(target_objects)} target objects")
+        
+        # Step 3: Collect all related objects for view coverage
+        all_categories = grounding_query.get_all_categories()
+        anchor_objects = []
+        
+        # Find anchor objects from the query structure
+        for constraint in grounding_query.root.spatial_constraints:
+            for anchor_node in constraint.anchors:
+                anchor_result = self._get_query_executor()._execute_node(anchor_node)
+                anchor_objects.extend(anchor_result.matched_objects)
+        
+        # Step 4: Select keyframes
+        all_object_ids = [obj.obj_id for obj in target_objects[:5]]
+        if anchor_objects:
+            all_object_ids.extend([obj.obj_id for obj in anchor_objects[:3]])
+        
+        if strategy == "joint_coverage":
+            keyframe_indices = self.get_joint_coverage_views(all_object_ids, max_views=k)
+        else:  # target_only
+            keyframe_indices = self.get_joint_coverage_views(
+                [obj.obj_id for obj in target_objects[:5]], max_views=k
+            )
+        
+        # Map to image paths
+        keyframe_paths = []
+        for idx in keyframe_indices:
+            if idx < len(self.image_paths):
+                keyframe_paths.append(self.image_paths[idx])
+        
+        logger.success(f"[V2] Selected keyframes: {keyframe_indices}")
+        
+        # Extract anchor term for result
+        anchor_term = None
+        if grounding_query.root.spatial_constraints:
+            first_anchor = grounding_query.root.spatial_constraints[0].anchors
+            if first_anchor:
+                anchor_term = first_anchor[0].category
+        
+        return KeyframeResult(
+            query=query,
+            target_term=grounding_query.root.category,
+            anchor_term=anchor_term,
+            keyframe_indices=keyframe_indices,
+            keyframe_paths=keyframe_paths,
+            target_objects=target_objects,
+            anchor_objects=anchor_objects,
+            metadata={
+                "strategy": strategy,
+                "all_object_ids": all_object_ids,
+                "grounding_query": grounding_query.model_dump(),
+                "version": "v2",
+            }
+        )
 
 
 # Convenience function

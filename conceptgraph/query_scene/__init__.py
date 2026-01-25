@@ -7,12 +7,18 @@ A novel scene representation optimized for VLM inference, featuring:
 - View-object bidirectional index with semantic scoring  
 - Query-adaptive VLM input construction
 - Structured output parsing
+- Nested spatial query support (e.g., "pillow on sofa nearest door")
 
 Example:
     >>> from conceptgraph.query_scene import QueryScenePipeline
     >>> pipeline = QueryScenePipeline.from_scene("/path/to/scene")
     >>> result = pipeline.query("沙发旁边的台灯")
     >>> print(result.object_node.category, result.centroid)
+    
+    # For nested queries:
+    >>> from conceptgraph.query_scene import QueryParser, QueryExecutor
+    >>> parser = QueryParser(llm_model="gpt-4o", scene_categories=["pillow", "sofa", "door"])
+    >>> query = parser.parse("the pillow on the sofa nearest the door")
 """
 
 from .data_structures import (
@@ -27,7 +33,28 @@ from .data_structures import (
 )
 from .scene_representation import QuerySceneRepresentation
 from .query_pipeline import QueryScenePipeline, run_query
-from .query_parser import QueryParser, parse_query
+
+# Query parsing (nested spatial queries)
+from .query_structures import (
+    GroundingQuery,
+    QueryNode,
+    SpatialConstraint,
+    SelectConstraint,
+    ConstraintType,
+    simple_query,
+    spatial_query,
+    superlative_query,
+)
+from .query_parser import QueryParser, SimpleQueryParser, parse_query
+from .query_executor import QueryExecutor, ExecutionResult, execute_query
+from .spatial_relations import (
+    SpatialRelationChecker,
+    RelationResult,
+    RELATION_ALIASES,
+    check_relation,
+    get_canonical_relation,
+)
+
 from .index_builder import CLIPIndex, VisibilityIndex, SpatialIndex, RegionIndex, PointLevelIndex, SceneIndices
 from .point_feature_extractor import (
     PointFeatureExtractor, PointFeatureIndex, PointFeatureConfig,
@@ -63,9 +90,29 @@ __all__ = [
     # Pipeline
     "QueryScenePipeline",
     "run_query",
-    # Parser
+    # Query structures (nested spatial queries)
+    "GroundingQuery",
+    "QueryNode",
+    "SpatialConstraint",
+    "SelectConstraint",
+    "ConstraintType",
+    "simple_query",
+    "spatial_query",
+    "superlative_query",
+    # Query parser
     "QueryParser",
+    "SimpleQueryParser",
     "parse_query",
+    # Query executor
+    "QueryExecutor",
+    "ExecutionResult",
+    "execute_query",
+    # Spatial relations
+    "SpatialRelationChecker",
+    "RelationResult",
+    "RELATION_ALIASES",
+    "check_relation",
+    "get_canonical_relation",
     # Indices (hierarchical)
     "CLIPIndex",
     "VisibilityIndex",
