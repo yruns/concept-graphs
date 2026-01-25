@@ -323,7 +323,7 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
                 self._assign_node_ids(result.root, "root")
                 
                 logger.success(f"[QueryParser] Successfully parsed query")
-                logger.debug(f"[QueryParser] Result: {result.model_dump_json(indent=2)}")
+                logger.info(f"[QueryParser] Result: {result.model_dump_json(indent=2)}")
                 
                 return result
                 
