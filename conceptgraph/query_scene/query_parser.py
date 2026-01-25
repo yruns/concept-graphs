@@ -13,8 +13,9 @@ Usage:
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, ForwardRef, Literal
 from loguru import logger
+from pydantic import Field, create_model
 
 from .query_structures import (
     GroundingQuery,
@@ -260,20 +261,72 @@ class QueryParser:
         self.scene_categories = scene_categories
         self.temperature = temperature
         
-        # Initialize LLM with structured output
+        # Initialize LLM (structured schema is built per-parse)
         self._llm = None
-        self._structured_llm = None
     
     def _get_llm(self):
-        """Lazy initialization of LLM."""
+        """Lazy initialization of base LLM."""
         if self._llm is None:
             self._llm = _get_langchain_chat_model(
                 deployment_name=self.llm_model,
                 temperature=self.temperature,
             )
-            # Use with_structured_output for Pydantic model parsing
-            self._structured_llm = self._llm.with_structured_output(GroundingQuery)
-        return self._structured_llm
+        return self._llm
+
+    def _build_dynamic_schema(self):
+        """Build a dynamic schema with category enum + UNKNOW."""
+        categories = sorted(set(self.scene_categories))
+        if "UNKNOW" not in categories:
+            categories.append("UNKNOW")
+
+        Category = Literal[tuple(categories)]
+
+        query_node_ref = ForwardRef("QueryNodeDynamic")
+        spatial_constraint_ref = ForwardRef("SpatialConstraintDynamic")
+        select_constraint_ref = ForwardRef("SelectConstraintDynamic")
+
+        QueryNodeDynamic = create_model(
+            "QueryNodeDynamic",
+            category=(Category, Field(...)),
+            attributes=(List[str], Field(default_factory=list)),
+            spatial_constraints=(List[spatial_constraint_ref], Field(default_factory=list)),
+            select_constraint=(Optional[select_constraint_ref], None),
+            node_id=(str, ""),
+        )
+
+        SpatialConstraintDynamic = create_model(
+            "SpatialConstraintDynamic",
+            relation=(str, Field(...)),
+            anchors=(List[query_node_ref], Field(...)),
+        )
+
+        SelectConstraintDynamic = create_model(
+            "SelectConstraintDynamic",
+            constraint_type=(ConstraintType, Field(...)),
+            metric=(str, Field(...)),
+            order=(str, Field(...)),
+            reference=(Optional[query_node_ref], None),
+            position=(Optional[int], None),
+        )
+
+        GroundingQueryDynamic = create_model(
+            "GroundingQueryDynamic",
+            raw_query=(str, Field(...)),
+            root=(QueryNodeDynamic, Field(...)),
+            expect_unique=(bool, Field(...)),
+        )
+
+        types_namespace = {
+            "QueryNodeDynamic": QueryNodeDynamic,
+            "SpatialConstraintDynamic": SpatialConstraintDynamic,
+            "SelectConstraintDynamic": SelectConstraintDynamic,
+        }
+        QueryNodeDynamic.model_rebuild(_types_namespace=types_namespace)
+        SpatialConstraintDynamic.model_rebuild(_types_namespace=types_namespace)
+        SelectConstraintDynamic.model_rebuild(_types_namespace=types_namespace)
+        GroundingQueryDynamic.model_rebuild(_types_namespace=types_namespace)
+
+        return GroundingQueryDynamic
     
     def _build_prompt(self, query: str) -> str:
         """Build the prompt for query parsing."""
@@ -313,7 +366,8 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
                 logger.info(f"[QueryParser] Parsing query: '{query}' (attempt {attempt + 1})")
                 
                 prompt = self._build_prompt(query)
-                structured_llm = self._get_llm()
+                schema = self._build_dynamic_schema()
+                structured_llm = self._get_llm().with_structured_output(schema)
                 
                 # Invoke LLM with structured output
                 result = structured_llm.invoke(prompt)
@@ -321,14 +375,17 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
                 # Ensure raw_query is set
                 if not result.raw_query:
                     result.raw_query = query
-                
+
+                # Convert to standard GroundingQuery for downstream compatibility
+                parsed = GroundingQuery.model_validate(result.model_dump())
+
                 # Assign node IDs
-                self._assign_node_ids(result.root, "root")
+                self._assign_node_ids(parsed.root, "root")
                 
                 logger.success(f"[QueryParser] Successfully parsed query")
-                logger.info(f"[QueryParser] Result: {result.model_dump_json(indent=2)}")
-                
-                return result
+                logger.info(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
+
+                return parsed
                 
             except Exception as e:
                 last_error = e

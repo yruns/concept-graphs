@@ -553,6 +553,20 @@ class QueryExecutor:
                 return pos[1]
             elif metric == "height":
                 return pos[2]
+            elif metric == "size":
+                # Use same size logic as superlative
+                if hasattr(cand, 'bbox_3d') and cand.bbox_3d is not None:
+                    return float(np.prod(cand.bbox_3d.size))
+                if hasattr(cand, 'pcd_np') and cand.pcd_np is not None and len(cand.pcd_np) > 0:
+                    pts = np.asarray(cand.pcd_np)
+                    bbox_size = pts.max(axis=0) - pts.min(axis=0)
+                    return float(np.prod(bbox_size))
+                if hasattr(cand, 'point_cloud') and cand.point_cloud is not None:
+                    pts = np.asarray(cand.point_cloud)
+                    if len(pts) > 0:
+                        bbox_size = pts.max(axis=0) - pts.min(axis=0)
+                        return float(np.prod(bbox_size))
+                return 0.0
             else:
                 return scores.get(cand.obj_id, 0.0)
         

@@ -95,6 +95,7 @@ class SceneObject:
     summary: str = ""  # Description
     affordance_category: str = ""  # e.g., "lighting", "seating"
     co_objects: List[str] = field(default_factory=list)  # Related objects
+    affordances: Dict[str, Any] = field(default_factory=dict)  # Full affordance payload
     
     # Alias for backward compatibility
     @property
@@ -393,12 +394,16 @@ class KeyframeSelector:
         for obj in self.objects:
             if obj.obj_id in aff_by_id:
                 aff = aff_by_id[obj.obj_id]
-                obj.object_tag = aff.get('object_tag', '')
-                obj.summary = aff.get('summary', '')
-                obj.affordance_category = aff.get('category', '')
-                
+                obj.object_tag = aff.get('object_tag', obj.object_tag)
+                if obj.object_tag:
+                    obj.category = obj.object_tag
+                obj.summary = aff.get('summary', obj.summary)
+                obj.affordance_category = aff.get('category', obj.affordance_category)
+
                 affs = aff.get('affordances', {})
-                obj.co_objects = affs.get('co_objects', [])
+                if isinstance(affs, dict):
+                    obj.affordances = affs
+                    obj.co_objects = affs.get('co_objects', obj.co_objects)
     
     def _load_camera_poses(self) -> None:
         """Load camera poses from trajectory file."""

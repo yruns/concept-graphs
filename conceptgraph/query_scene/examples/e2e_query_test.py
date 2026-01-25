@@ -102,6 +102,42 @@ def load_scene_objects(scene_path: str) -> Tuple[List[SceneObject], Dict]:
     return objects, data
 
 
+def apply_affordances(objects: List[SceneObject], scene_path: Path) -> None:
+    """Merge affordance outputs into scene objects."""
+    affordance_file = scene_path / "sg_cache_detect" / "object_affordances.json"
+    if not affordance_file.exists():
+        affordance_file = scene_path / "sg_cache" / "object_affordances.json"
+    if not affordance_file.exists():
+        logger.warning("No affordance file found; using raw categories")
+        return
+
+    try:
+        with open(affordance_file) as f:
+            affordances = json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load affordances: {e}")
+        return
+
+    aff_by_id = {a.get("id"): a for a in affordances if "id" in a}
+    updated = 0
+    for obj in objects:
+        aff = aff_by_id.get(obj.obj_id)
+        if not aff:
+            continue
+        obj.object_tag = aff.get("object_tag", obj.object_tag)
+        if obj.object_tag:
+            obj.category = obj.object_tag
+        obj.summary = aff.get("summary", obj.summary)
+        obj.affordance_category = aff.get("category", obj.affordance_category)
+        affs = aff.get("affordances", {})
+        if isinstance(affs, dict):
+            obj.affordances = affs
+            obj.co_objects = affs.get("co_objects", obj.co_objects)
+        updated += 1
+
+    logger.info(f"Applied affordances to {updated} objects")
+
+
 def save_ply_with_colors(
     objects: List[SceneObject],
     color_map: Dict[int, Tuple[int, int, int]],
@@ -405,12 +441,14 @@ def main():
     logger.info("=" * 70)
     
     objects, _ = load_scene_objects(str(scene_path))
+    apply_affordances(objects, scene_path)
     if not objects:
         logger.error("No objects loaded")
         return
     
-    categories = Counter(obj.object_tag for obj in objects)
+    categories = Counter(obj.category for obj in objects)
     logger.info(f"Loaded {len(objects)} objects")
+    logger.info(f"Categories: {categories}")
     scene_categories = list(categories.keys())
     
     # Test queries - designed to cover various complexity levels
