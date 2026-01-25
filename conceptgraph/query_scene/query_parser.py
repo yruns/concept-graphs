@@ -47,7 +47,7 @@ The output must be a valid GroundingQuery with the following structure:
 - expect_unique: True if the query uses "the" (singular), False otherwise
 
 Each QueryNode has:
-- category: The object type (MUST be from the provided scene categories or a close synonym)
+- category: The object type (MUST be an EXACT string from the provided scene categories, or "UNKNOW" if no suitable match exists)
 - attributes: List of adjective attributes like "red", "large", "wooden"
 - spatial_constraints: List of spatial relations to other objects (filter phase, AND logic)
 - select_constraint: Optional selection like "nearest", "largest", "second" (select phase)
@@ -67,14 +67,17 @@ SelectConstraint structure (for superlative/ordinal):
 - position: Integer for ordinal (1=first, 2=second, etc.)
 
 IMPORTANT RULES:
-1. Map synonyms to scene categories: pillow→throw_pillow, couch→sofa, lamp→table_lamp
-2. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
-3. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
-4. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
-5. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
-6. Spatial constraints are filters (AND logic), select_constraint is for final selection
-7. Keep structure flat when possible - don't over-nest
-8. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is"""
+1. Every category (including anchors and references) MUST be chosen from SCENE CATEGORIES exactly (case-sensitive, keep underscores). Never invent new categories or pluralize.
+2. If the query uses a synonym, map it to the closest entry in SCENE CATEGORIES (e.g., if SCENE CATEGORIES contains throw_pillow, use that for "pillow"; if it contains sofa, use that for "couch"; if it contains table_lamp, use that for "lamp").
+3. If no suitable category exists in SCENE CATEGORIES, output "UNKNOW" for that node (including anchors and references).
+4. Before returning, verify every category string is present in SCENE CATEGORIES or is exactly "UNKNOW".
+5. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
+6. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
+7. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
+8. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
+9. Spatial constraints are filters (AND logic), select_constraint is for final selection
+10. Keep structure flat when possible - don't over-nest
+11. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is"""
 
 
 def get_few_shot_examples() -> str:

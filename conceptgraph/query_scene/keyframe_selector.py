@@ -41,9 +41,9 @@ try:
     import torch
     import open_clip
     HAS_CLIP = True
-except ImportError:
+except Exception as e:
     HAS_CLIP = False
-    logger.warning("open_clip not available, CLIP features will not work")
+    logger.warning(f"open_clip not available, CLIP features will not work: {e}")
 
 # Import nested query modules
 from .query_structures import GroundingQuery, QueryNode, SpatialConstraint, SelectConstraint
