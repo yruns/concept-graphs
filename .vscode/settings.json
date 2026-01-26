@@ -11,6 +11,7 @@
         "LICENSE": true,
         "setup.py": true,
         "environment.yml": true,
-        "env_vars.bash.template": true
+        "env_vars.bash.template": true,
+        "conceptgraph.egg-info": true,
     }
 }

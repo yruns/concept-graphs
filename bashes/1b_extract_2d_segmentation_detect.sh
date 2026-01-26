@@ -22,14 +22,14 @@
 ################################################################################
 
 # 激活环境
-source /home/shyue/anaconda3/bin/activate conceptgraph
-export PYTHONPATH="/home/shyue/codebase/Grounded-Segment-Anything/GroundingDINO:$PYTHONPATH"
+source /home/ysh/miniconda3/bin/activate conceptgraph
+export PYTHONPATH="/home/ysh/codecase/concept-graphs/Grounded-Segment-Anything/GroundingDINO:$PYTHONPATH"
 
 # 进入工作目录
-cd /home/shyue/codebase/concept-graphs/conceptgraph
+cd /home/ysh/codecase/concept-graphs/conceptgraph
 
 # 加载环境变量
-source /home/shyue/codebase/concept-graphs/env_vars.bash
+source /home/ysh/codecase/concept-graphs/env_vars.bash
 
 # 场景设置
 SCENE_NAME=room0
