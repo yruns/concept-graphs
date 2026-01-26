@@ -616,7 +616,7 @@ python -m conceptgraph.segmentation.hierarchical_builder \
 export LLM_BASE_URL="http://10.21.231.7:8006"
 
 # 设置数据集根目录
-export REPLICA_ROOT="/home/user/Datasets/Replica/Replica"
+export REPLICA_ROOT="$HOME/Datasets/Replica/Replica"
 ```
 
 ---
@@ -648,7 +648,7 @@ VISIBILITY_CHANGE_THRESHOLD = 3  # 可见性变化阈值 (物体数)
 MIN_KEYFRAME_DISTANCE = 20       # 关键帧最小间距
 
 # LLM参数
-LLM_MODEL = "gpt-4"           # 或 "qwen2.5:72b" 等
+LLM_MODEL = "gpt-5.2-2025-12-11"           # 或 "qwen2.5:72b" 等
 LLM_TEMPERATURE = 0.7
 LLM_MAX_TOKENS = 4096
 ```

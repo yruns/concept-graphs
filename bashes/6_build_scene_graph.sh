@@ -11,7 +11,7 @@
 #   - 使用最小生成树优化图结构
 #
 # 输入：
-#   - 精炼描述: $REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_gpt-4_responses/
+#   - 精炼描述: $REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_<model>_responses/
 #   - 3D 对象地图: $REPLICA_ROOT/$SCENE_NAME/pcd_saves/*.pkl.gz
 #
 # 输出：
@@ -23,19 +23,35 @@
 #
 ################################################################################
 
-# 激活环境
-source /home/shyue/anaconda3/bin/activate conceptgraph
-export PYTHONPATH="/home/shyue/codebase/Grounded-Segment-Anything/GroundingDINO:$PYTHONPATH"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# 进入工作目录
-cd /home/shyue/codebase/concept-graphs/conceptgraph
+# 激活环境
+if [ -f "${HOME}/anaconda3/bin/activate" ]; then
+    source "${HOME}/anaconda3/bin/activate" conceptgraph
+elif [ -f "${HOME}/miniconda3/bin/activate" ]; then
+    source "${HOME}/miniconda3/bin/activate" conceptgraph
+elif command -v conda >/dev/null 2>&1; then
+    source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate conceptgraph
+else
+    echo "⚠ 未找到 conda 激活脚本，继续使用当前环境"
+fi
 
 # 加载环境变量
-source /home/shyue/codebase/concept-graphs/env_vars.bash
+source "${ROOT_DIR}/env_vars.bash"
+if [ -n "${GSA_PATH}" ]; then
+    export PYTHONPATH="${GSA_PATH}/GroundingDINO:${PYTHONPATH}"
+fi
+
+# 进入工作目录
+cd "${ROOT_DIR}/conceptgraph"
 
 # 配置统一LLM客户端
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-4o-2024-08-06"
+export LLM_MODEL="gpt-5.2-2025-12-11"
+SAFE_LLM_MODEL="${LLM_MODEL//\//_}"
+SAFE_LLM_MODEL="${SAFE_LLM_MODEL//:/_}"
+RESPONSES_DIR="cfslam_${SAFE_LLM_MODEL}_responses"
 
 # 场景设置
 SCENE_NAME=room0
@@ -49,7 +65,7 @@ echo "场景: ${SCENE_NAME}"
 echo "LLM 服务器: ${LLM_BASE_URL}"
 echo "模型: ${LLM_MODEL}"
 echo ""
-echo "输入: ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/cfslam_gpt-4_responses/"
+echo "输入: ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/${RESPONSES_DIR}/"
 echo "输出: ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/map/scene_map_cfslam_pruned.pkl.gz"
 echo "      ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/cfslam_object_relations.json"
 echo "================================================"
@@ -68,9 +84,9 @@ echo "✓ LLM 服务运行正常"
 echo ""
 
 # 检查输入文件
-if [ ! -f "${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/cfslam_gpt-4_responses.pkl" ]; then
+if [ ! -f "${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/${RESPONSES_DIR}.pkl" ]; then
     echo "✗ 错误: 输入文件不存在"
-    echo "   ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/cfslam_gpt-4_responses.pkl"
+    echo "   ${REPLICA_ROOT}/${SCENE_NAME}/sg_cache/${RESPONSES_DIR}.pkl"
     echo ""
     echo "请先运行步骤 5 (5_refine_object_captions.sh)"
     exit 1

@@ -396,15 +396,16 @@ def visualize_query(
 def main():
     """运行示例: the sofa near the door"""
     import argparse
+    import os
     
     parser = argparse.ArgumentParser(description="Visualize CLIP similarity heatmap")
     parser.add_argument("--pcd", type=str, 
-                       default="/home/shyue/Datasets/Replica/Replica/room0/pcd_saves/full_pcd_ram_withbg_allclasses_overlap_maskconf0.25_simsum1.2_dbscan.1_merge20_masksub_post.pkl.gz",
+                       default=os.path.expandvars("$HOME/Datasets/Replica/Replica/room0/pcd_saves/full_pcd_ram_withbg_allclasses_overlap_maskconf0.25_simsum1.2_dbscan.1_merge20_masksub_post.pkl.gz"),
                        help="Path to pcd file")
     parser.add_argument("--query", type=str, default="the sofa near the door",
                        help="Query text")
     parser.add_argument("--output", type=str, 
-                       default="/home/shyue/Datasets/Replica/Replica/room0/query_visualizations",
+                       default=os.path.expandvars("$HOME/Datasets/Replica/Replica/room0/query_visualizations"),
                        help="Output directory")
     parser.add_argument("--target", type=str, default="sofa", help="Target object")
     parser.add_argument("--anchor", type=str, default="door", help="Anchor object")

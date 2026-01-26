@@ -19,19 +19,32 @@
 #
 ################################################################################
 
-# 激活环境
-source /home/shyue/anaconda3/bin/activate conceptgraph
-export PYTHONPATH="/home/shyue/codebase/Grounded-Segment-Anything/GroundingDINO:$PYTHONPATH"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-# 进入工作目录
-cd /home/shyue/codebase/concept-graphs
+# 激活环境
+if [ -f "${HOME}/anaconda3/bin/activate" ]; then
+    source "${HOME}/anaconda3/bin/activate" conceptgraph
+elif [ -f "${HOME}/miniconda3/bin/activate" ]; then
+    source "${HOME}/miniconda3/bin/activate" conceptgraph
+elif command -v conda >/dev/null 2>&1; then
+    source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate conceptgraph
+else
+    echo "⚠ 未找到 conda 激活脚本，继续使用当前环境"
+fi
 
 # 加载环境变量
-source ./env_vars.bash
+source "${ROOT_DIR}/env_vars.bash"
+if [ -n "${GSA_PATH}" ]; then
+    export PYTHONPATH="${GSA_PATH}/GroundingDINO:${PYTHONPATH}"
+fi
+
+# 进入工作目录
+cd "${ROOT_DIR}"
 
 # 配置LLM (使用VLM模型，需要能处理图像)
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gemini-3-flash-preview"
+export LLM_MODEL="gpt-5.2-2025-12-11"
 
 # 场景设置
 SCENE_NAME=${1:-room0}

@@ -47,6 +47,18 @@ from conceptgraph.llava.unified_client import chat_completions
 print("使用统一的LLM客户端")
 
 
+def _sanitize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "_").replace(":", "_")
+
+
+def _sanitize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "_").replace(":", "_")
+
+
+def _sanitize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "_").replace(":", "_")
+
+
 @dataclass
 class ProgramArgs:
     mode: Literal[
@@ -485,7 +497,12 @@ def refine_node_captions(args):
 
     TIMEOUT = 60  # Timeout in seconds
 
-    responses_savedir = Path(args.cachedir) / "cfslam_gpt-4_responses"
+    base_url = os.getenv("LLM_BASE_URL")
+    model_name = os.getenv("LLM_MODEL")
+    if not base_url or not model_name:
+        raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
+    safe_model_name = _sanitize_model_name(model_name)
+    responses_savedir = Path(args.cachedir) / f"cfslam_{safe_model_name}_responses"
     responses_savedir.mkdir(exist_ok=True, parents=True)
 
     responses = []
@@ -517,10 +534,6 @@ def refine_node_captions(args):
         curr_chat_messages.append({"role": "user", "content": preds})
         
         # 使用统一客户端
-        base_url = os.getenv("LLM_BASE_URL")
-        model_name = os.getenv("LLM_MODEL")
-        if not base_url or not model_name:
-            raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
         chat_completion = chat_completions(
             messages=curr_chat_messages,
             model=model_name,
@@ -536,7 +549,7 @@ def refine_node_captions(args):
         responses.append(json.dumps(_dict))
         save_json_to_file(_dict, responses_savedir / f"{_caption['id']}.json")
 
-    with open(Path(args.cachedir) / "cfslam_gpt-4_responses.pkl", "wb") as f:
+    with open(Path(args.cachedir) / f"cfslam_{safe_model_name}_responses.pkl", "wb") as f:
         pkl.dump(responses, f)
 
 
@@ -581,7 +594,13 @@ def build_scenegraph(args):
     scene_map = MapObjectList()
     load_scene_map(args, scene_map)
 
-    response_dir = Path(args.cachedir) / "cfslam_gpt-4_responses"
+    model_name = os.getenv("LLM_MODEL")
+    if model_name:
+        safe_model_name = _sanitize_model_name(model_name)
+        response_dir = Path(args.cachedir) / f"cfslam_{safe_model_name}_responses"
+    else:
+        response_dir = Path(args.cachedir) / "cfslam_gpt-4_responses"
+        print("⚠ LLM_MODEL 未设置，默认使用 cfslam_gpt-4_responses")
     responses = []
     object_tags = []
     also_indices_to_remove = [] # indices to remove if the json file does not exist
@@ -596,7 +615,7 @@ def build_scenegraph(args):
                 _d["response"] = json.loads(_d["response"])
             except json.JSONDecodeError:
                 _d["response"] = {
-                    'summary': f'GPT4 json reply failed: Here is the invalid response {_d["response"]}',
+                    'summary': f'LLM json reply failed: Here is the invalid response {_d["response"]}',
                     'possible_tags': ['possible_tag_json_failed'],
                     'object_tag': 'invalid'
                 }
@@ -606,7 +625,7 @@ def build_scenegraph(args):
     # # Load the responses from the json file
     # responses = None
     # # Load json file into a list
-    # with open(Path(args.cachedir) / "cfslam_gpt-4_responses.pkl", "rb") as f:
+    # with open(Path(args.cachedir) / "cfslam_<model>_responses.pkl", "rb") as f:
     #     responses = pkl.load(f)
     # object_tags = []
     # for response in responses:

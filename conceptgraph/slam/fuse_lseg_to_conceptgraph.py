@@ -30,7 +30,7 @@ from pathlib import Path
 import imageio
 
 # Add lseg_feature_extraction to path for imports
-LSEG_PROJECT_DIR = "/home/shyue/codebase/lseg_feature_extraction"
+LSEG_PROJECT_DIR = os.path.expandvars("$HOME/codecase/lseg_feature_extraction")
 sys.path.insert(0, LSEG_PROJECT_DIR)
 
 from encoding.models.sseg import BaseNet

@@ -23,13 +23,13 @@
 
 输出文件位置:
   各场景的可视化输出位于:
-  /home/shyue/Datasets/Replica/Replica/{scene_name}/visualization/
+  $HOME/Datasets/Replica/Replica/{scene_name}/visualization/
   
   包含:
     - images/     : 多视角PNG图像
     - ply/        : 3D模型文件
     - html/       : 交互式HTML可视化
 
-日志文件位置: /home/shyue/codebase/concept-graphs/bashes/logs
+日志文件位置: $HOME/codecase/concept-graphs/bashes/logs
 
 ================================================================================

@@ -1193,11 +1193,11 @@ def get_dataset(dataconfig, basedir, sequence, **kwargs):
 
 if __name__ == "__main__":
     cfg = load_dataset_config(
-        "/home/qiao/src/gradslam-foundation/examples/dataconfigs/replica/replica.yaml"
+        os.path.expandvars("$HOME/src/gradslam-foundation/examples/dataconfigs/replica/replica.yaml")
     )
     dataset = ReplicaDataset(
         config_dict=cfg,
-        basedir="/home/qiao/src/nice-slam/Datasets/Replica",
+        basedir=os.path.expandvars("$HOME/src/nice-slam/Datasets/Replica"),
         sequence="office0",
         start=0,
         end=1900,
@@ -1250,7 +1250,7 @@ if __name__ == "__main__":
     # from icl_dataset import ICLWithCLIPEmbeddings
 
     # dataset = ICLWithCLIPEmbeddings(
-    #     os.path.join("/home/krishna/data/icl/"),
+    #     os.path.join("$HOME/data/icl/"),
     #     trajectories="living_room_traj1_frei_png",
     #     stride=10,
     #     height=480,

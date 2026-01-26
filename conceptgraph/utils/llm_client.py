@@ -37,7 +37,7 @@ MODEL_CONFIGS: Dict[str, Dict[str, Any]] = {
 }
 
 # Default model to use when none specified
-DEFAULT_MODEL = "gpt-4o-2024-08-06"
+DEFAULT_MODEL = "gpt-5.2-2025-12-11"
 
 
 def get_available_models() -> list:
@@ -59,7 +59,8 @@ def get_langchain_chat_model(
 
     Args:
         deployment_name: Model deployment name. Supported values:
-            - "gpt-4o-2024-08-06" (default)
+            - "gpt-5.2-2025-12-11" (default)
+            - "gpt-4o-2024-08-06"
             - "gemini-2.5-pro"
             - "gemini-3-pro-preview-new"
             - "gemini-3-flash-preview"
@@ -74,7 +75,7 @@ def get_langchain_chat_model(
         ValueError: If deployment_name is not in MODEL_CONFIGS
 
     Example:
-        >>> model = get_langchain_chat_model("gpt-4o-2024-08-06")
+        >>> model = get_langchain_chat_model("gpt-5.2-2025-12-11")
         >>> response = model.invoke("Hello, how are you?")
         >>> print(response.content)
         
@@ -111,9 +112,14 @@ def get_langchain_chat_model(
 
 
 # Convenience function aliases
+def get_gpt52() -> AzureChatOpenAI:
+    """Get GPT-5.2 model with default settings."""
+    return get_langchain_chat_model("gpt-5.2-2025-12-11")
+
+
 def get_gpt4o() -> AzureChatOpenAI:
-    """Get GPT-4o model with default settings."""
-    return get_langchain_chat_model("gpt-4o-2024-08-06")
+    """Backward-compatible alias for GPT-5.2 default."""
+    return get_gpt52()
 
 
 def get_gemini_pro() -> AzureChatOpenAI:

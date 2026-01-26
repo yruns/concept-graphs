@@ -256,7 +256,7 @@ def main():
     # Default scene path
     if args.scene is None:
         import os
-        replica_root = os.environ.get("REPLICA_ROOT", "/home/shyue/Datasets/Replica/Replica")
+        replica_root = os.environ.get("REPLICA_ROOT", os.path.expandvars("$HOME/Datasets/Replica/Replica"))
         args.scene = f"{replica_root}/room0"
     
     logger.info(f"Scene path: {args.scene}")

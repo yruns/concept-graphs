@@ -6,7 +6,7 @@ spatial queries into structured GroundingQuery objects using LLM
 with structured output.
 
 Usage:
-    parser = QueryParser(llm_model="gpt-4o-2024-08-06", scene_categories=["sofa", "pillow", "door"])
+    parser = QueryParser(llm_model="gpt-5.2-2025-12-11", scene_categories=["sofa", "pillow", "door"])
     query = parser.parse("the pillow on the sofa nearest the door")
     # Returns: GroundingQuery with nested structure
 """
@@ -253,7 +253,7 @@ class QueryParser:
         Initialize the query parser.
         
         Args:
-            llm_model: LLM model name (e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+            llm_model: LLM model name (e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
             scene_categories: List of object categories present in the scene
             temperature: LLM temperature (default 0.0 for deterministic output)
         """

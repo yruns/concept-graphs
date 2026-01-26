@@ -214,7 +214,7 @@ class KeyframeSelector:
             pcd_file: Path to .pkl.gz file with 3D objects
             affordance_file: Path to object_affordances.json (optional)
             stride: Frame stride used during mapping
-            llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+            llm_model: LLM model name (required, e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
         """
         self.scene_path = Path(scene_path)
         self.stride = stride

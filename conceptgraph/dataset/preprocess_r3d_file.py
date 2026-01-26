@@ -23,7 +23,7 @@ from tqdm import tqdm, trange
 
 @dataclass
 class ProgramArgs:
-    datapath: str = "/home/krishna/data/record3d/krishna-bcs-room"
+    datapath: str = os.path.expandvars("$HOME/data/record3d/krishna-bcs-room")
 
 
 def load_depth(filepath):

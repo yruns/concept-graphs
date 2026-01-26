@@ -759,8 +759,8 @@ if __name__ == "__main__":
     # from types import SimpleNamespace
 
     # args = SimpleNamespace()
-    # args.model_path = "/home/krishna/code/LLaVA/LLaVA-7b-v0"
-    # args.image_file = "/home/krishna/Downloads/figurines/images/frame_00150.jpg"
+    # args.model_path = "$HOME/code/LLaVA/LLaVA-7b-v0"
+    # args.image_file = "$HOME/Downloads/figurines/images/frame_00150.jpg"
     # args.conv_mode = "multimodal"
     # args.num_gpus = 1
     parser = argparse.ArgumentParser()

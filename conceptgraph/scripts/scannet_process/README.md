@@ -15,7 +15,7 @@ Options:
 Example
 ```
 SCENE_ID=scene0011_00
-SENS_PATH=/home/qiao/data/scannet/scans/${SCENE_ID}/${SCENE_ID}.sens
-OUTPUT_PATH=/home/qiao/data/scannet/scans/${SCENE_ID}/
+SENS_PATH=$HOME/data/scannet/scans/${SCENE_ID}/${SCENE_ID}.sens
+OUTPUT_PATH=$HOME/data/scannet/scans/${SCENE_ID}/
 python reader.py --filename $SENS_PATH --output_path $OUTPUT_PATH --export_depth_images --export_color_images --export_poses --export_intrinsics
 ```

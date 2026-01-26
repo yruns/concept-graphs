@@ -20,13 +20,13 @@
 set -e
 
 # Default parameters
-REPLICA_ROOT="${REPLICA_ROOT:-/home/shyue/Datasets/Replica/Replica}"
+REPLICA_ROOT="${REPLICA_ROOT:-$HOME/Datasets/Replica/Replica}"
 SCENE_NAME="${1:-room0}"
 QUERY="${2:-pillow on the sofa}"
 K="${3:-3}"
 
 # LLM configuration
-export LLM_MODEL="${LLM_MODEL:-gpt-4o-2024-08-06}"
+export LLM_MODEL="${LLM_MODEL:-gpt-5.2-2025-12-11}"
 
 # Scene path
 SCENE_PATH="${REPLICA_ROOT}/${SCENE_NAME}"

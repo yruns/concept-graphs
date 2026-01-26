@@ -15,7 +15,7 @@
 ## 🗂️ Replica根目录结构
 
 ```
-/home/shyue/Datasets/Replica/Replica/
+$HOME/Datasets/Replica/Replica/
 ├── room0/                    ← 场景数据目录
 ├── room0_mesh.ply            ← 原始场景mesh（Ground Truth）✨
 ├── room1/
@@ -73,9 +73,9 @@ room0/
 ├── sg_cache/                  ← 场景图缓存
 │   ├── cfslam_captions_llava/      ← LLaVA生成的物体描述
 │   ├── cfslam_feat_llava/          ← 物体CLIP特征
-│   ├── cfslam_gpt-4_responses/     ← GPT-4精炼的描述
+│   ├── cfslam_<model>_responses/   ← LLM精炼的描述
 │   ├── cfslam_llava_captions.json  ← 物体描述JSON
-│   ├── cfslam_gpt-4_responses.pkl  ← GPT-4响应
+│   ├── cfslam_<model>_responses.pkl  ← LLM响应
 │   ├── map/
 │   │   └── scene_map_cfslam_pruned.pkl.gz  ← 最终场景图地图
 │   ├── cfslam_object_relations.json        ← 物体关系
@@ -229,10 +229,10 @@ bash bashes/7_visualize_scene_graph_offscreen.sh
 
 ```bash
 # 查看Ground Truth
-meshlab /home/shyue/Datasets/Replica/Replica/room0_mesh.ply
+meshlab $HOME/Datasets/Replica/Replica/room0_mesh.ply
 
 # 查看重建结果
-meshlab /home/shyue/Datasets/Replica/Replica/room0/visualization/ply/scene_pointcloud.ply
+meshlab $HOME/Datasets/Replica/Replica/room0/visualization/ply/scene_pointcloud.ply
 ```
 
 ### 方案3: 使用CloudCompare对比

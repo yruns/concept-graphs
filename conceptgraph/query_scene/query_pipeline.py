@@ -35,7 +35,7 @@ class QueryScenePipeline:
             scene: Scene representation
             indices: Pre-built scene indices (optional)
             descriptions: Pre-generated object descriptions (optional)
-            llm_model: LLM model name (required, e.g., "gpt-4o-2024-08-06", "gemini-2.5-pro")
+            llm_model: LLM model name (required, e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
             vlm_url: VLM server URL
             vlm_model: VLM model name
             use_vlm: Whether to use VLM for inference

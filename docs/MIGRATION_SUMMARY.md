@@ -65,7 +65,7 @@ export OLLAMA_VISION_MODEL="llama3.2-vision:latest"
 
 # 新的
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-4o-2024-08-06"
+export LLM_MODEL="gpt-5.2-2025-12-11"
 ```
 - 移除Ollama服务检查
 - 添加LLM服务健康检查
@@ -79,7 +79,7 @@ export OLLAMA_GPT_MODEL="llama3.1:8b"
 
 # 新的
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-4o-2024-08-06"
+export LLM_MODEL="gpt-5.2-2025-12-11"
 ```
 - 统一配置方式
 
@@ -102,7 +102,7 @@ export LLM_MODEL="gpt-4o-2024-08-06"
 ### 新增
 ```bash
 export LLM_BASE_URL="http://10.21.231.7:8006"  # 必需
-export LLM_MODEL="gpt-4o-2024-08-06"           # 可选,有默认值
+export LLM_MODEL="gpt-5.2-2025-12-11"           # 可选,有默认值
 ```
 
 ### 已废弃(不再使用)
@@ -139,11 +139,11 @@ LLAVA_CKPT_PATH  # 视觉客户端不再需要
 
 ### 运行测试套件
 ```bash
-cd /home/shyue/codebase/concept-graphs
+cd $HOME/codecase/concept-graphs
 
 # 设置环境变量
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-4o-2024-08-06"
+export LLM_MODEL="gpt-5.2-2025-12-11"
 
 # 运行测试
 python test_unified_client.py
@@ -184,7 +184,7 @@ from conceptgraph.llava.unified_client import chat_completions
 response = chat_completions(
     messages=[{"role": "user", "content": "你好"}],
     base_url="http://10.21.231.7:8006",
-    model="gpt-4o-2024-08-06"
+    model="gpt-5.2-2025-12-11"
 )
 ```
 
@@ -203,9 +203,9 @@ response = chat(query="描述图像", image=image)
 #### 运行场景图生成
 ```bash
 export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-4o-2024-08-06"
+export LLM_MODEL="gpt-5.2-2025-12-11"
 
-cd /home/shyue/codebase/concept-graphs/bashes
+cd $HOME/codecase/concept-graphs/bashes
 bash 4_extract_object_captions.sh
 bash 5_refine_object_captions.sh
 bash 6_build_scene_graph.sh

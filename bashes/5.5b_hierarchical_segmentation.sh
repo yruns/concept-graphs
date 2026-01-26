@@ -34,7 +34,7 @@ fi
 
 # 设置LLM服务地址
 export LLM_BASE_URL="${LLM_BASE_URL:-http://10.21.231.7:8006}"
-export LLM_MODEL="${LLM_MODEL:-gemini-3-flash-preview}"
+export LLM_MODEL="${LLM_MODEL:-gpt-5.2-2025-12-11}"
 
 # 场景设置
 SCENE_NAME="${1:-room0}"

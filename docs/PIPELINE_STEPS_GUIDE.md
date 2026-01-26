@@ -143,9 +143,9 @@ python scenegraph/build_scenegraph_cfslam.py --mode extract-node-captions
 
 ### 输出
 - **精炼描述 (每个物体单独文件)**: 
-  - `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_gpt-4_responses/*.json`
+  - `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_<model>_responses/*.json`
 - **汇总文件**: 
-  - `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_gpt-4_responses.pkl`
+  - `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_<model>_responses.pkl`
 
 ### 关键脚本
 ```bash
@@ -167,7 +167,7 @@ python scenegraph/build_scenegraph_cfslam.py --mode refine-node-captions
 - 使用最小生成树算法优化和剪枝图结构
 
 ### 输入
-- **精炼描述**: `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_gpt-4_responses/`
+- **精炼描述**: `$REPLICA_ROOT/$SCENE_NAME/sg_cache/cfslam_<model>_responses/`
 - **3D 对象地图**: `$REPLICA_ROOT/$SCENE_NAME/pcd_saves/*.pkl.gz`
 
 ### 输出
@@ -258,7 +258,7 @@ python scripts/visualize_cfslam_results.py --edge_file
 
 ## 主要配置文件
 
-- **环境变量**: `/home/shyue/codebase/concept-graphs/env_vars.bash`
+- **环境变量**: `$HOME/codecase/concept-graphs/env_vars.bash`
 - **数据集配置**: `$REPLICA_CONFIG_PATH`
 - **Hydra 配置**: `conceptgraph/hydra_configs/`
 

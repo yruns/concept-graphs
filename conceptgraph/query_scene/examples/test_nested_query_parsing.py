@@ -7,7 +7,7 @@ to verify that the LLM correctly parses them into GroundingQuery structures.
 
 Usage:
     python -m conceptgraph.query_scene.examples.test_nested_query_parsing \
-        --llm_model gpt-4o-2024-08-06
+        --llm_model gpt-5.2-2025-12-11
 """
 
 import argparse
@@ -303,7 +303,7 @@ def main():
         logger.info("Skipping LLM parser test (no --llm_model provided)")
         logger.info("To test with LLM, run:")
         logger.info("  python -m conceptgraph.query_scene.examples.test_nested_query_parsing \\")
-        logger.info("      --llm_model gpt-4o-2024-08-06")
+        logger.info("      --llm_model gpt-5.2-2025-12-11")
         logger.info("#" * 70)
     
     logger.info("=" * 70)

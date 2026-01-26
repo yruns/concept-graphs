@@ -17,7 +17,7 @@ def main():
     import os
     
     # Get scene path from environment or default
-    replica_root = os.environ.get("REPLICA_ROOT", "/home/shyue/Datasets/Replica/Replica")
+    replica_root = os.environ.get("REPLICA_ROOT", os.path.expandvars("$HOME/Datasets/Replica/Replica"))
     scene_path = Path(replica_root) / "room0"
     
     if not scene_path.exists():
@@ -50,7 +50,7 @@ def main():
     llm_model = os.environ.get("LLM_MODEL")
     if not llm_model:
         logger.error("LLM_MODEL environment variable must be set.")
-        logger.info("Available models: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview")
+        logger.info("Available models: gpt-5.2-2025-12-11, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview")
         return
     
     logger.info(f"Loading scene and building indices (using LLM: {llm_model})...")

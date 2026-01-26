@@ -32,11 +32,22 @@ MAX_DEPTH=10.0
 DEPTH_SCALE=6553.5
 RESIZE_LONG_SIDE=640
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 # 激活 lseg 环境
-source /home/shyue/anaconda3/bin/activate lseg
+if [ -f "${HOME}/anaconda3/bin/activate" ]; then
+  source "${HOME}/anaconda3/bin/activate" lseg
+elif [ -f "${HOME}/miniconda3/bin/activate" ]; then
+  source "${HOME}/miniconda3/bin/activate" lseg
+elif command -v conda >/dev/null 2>&1; then
+  source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate lseg
+else
+  echo "⚠ 未找到 conda 激活脚本，继续使用当前环境"
+fi
 
 # 加载 ConceptGraphs 环境变量
-source /home/shyue/codebase/concept-graphs/env_vars.bash
+source "${ROOT_DIR}/env_vars.bash"
 
 # 场景设置
 SCENE_NAME=${1:-room0}

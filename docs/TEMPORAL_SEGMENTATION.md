@@ -86,8 +86,8 @@ bash bashes/1b_extract_2d_segmentation_detect.sh
 ### 运行分段
 
 ```bash
-cd /home/shyue/codebase/concept-graphs
-source /home/shyue/anaconda3/bin/activate conceptgraph
+cd $HOME/codecase/concept-graphs
+source $HOME/anaconda3/bin/activate conceptgraph
 source env_vars.bash
 
 python conceptgraph/segmentation/balanced_segmenter.py \
@@ -103,7 +103,7 @@ $REPLICA_ROOT/room0/sg_cache/segmentation_balanced/
 ├── trajectory_segments.json    # 分段结果
 └── segmentation_signals.json   # 信号数据
 
-/home/shyue/codebase/concept-graphs/room0_seg/
+$HOME/codecase/concept-graphs/room0_seg/
 ├── balanced_segmentation.png   # 信号可视化
 └── region_vis_balanced/
     ├── regions_overview.jpg    # 区域总览

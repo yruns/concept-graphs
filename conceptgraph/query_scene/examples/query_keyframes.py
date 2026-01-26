@@ -50,7 +50,7 @@ def parse_args():
         "--llm_model",
         type=str,
         required=True,
-        help="LLM model name (required). Options: gpt-4o-2024-08-06, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview",
+        help="LLM model name (required). Options: gpt-5.2-2025-12-11, gemini-2.5-pro, gemini-3-pro-preview-new, gemini-3-flash-preview",
     )
     return parser.parse_args()
 
