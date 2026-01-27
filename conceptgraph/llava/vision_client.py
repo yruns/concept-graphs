@@ -32,8 +32,14 @@ class UnifiedVisionChat:
         # 无状态,不需要重置
         pass
     
-    def _image_to_data_url(self, image):
-        """将图像转换为data URL"""
+    def _image_to_data_url(self, image, max_size=512):
+        """
+        将图像转换为data URL，并压缩以减小请求大小
+        
+        Args:
+            image: PIL Image 或 numpy 数组
+            max_size: 最大边长（像素），超过会等比例缩放
+        """
         if isinstance(image, Image.Image):
             pil_image = image
         elif isinstance(image, np.ndarray):
@@ -42,10 +48,19 @@ class UnifiedVisionChat:
             raise ValueError(f"不支持的图像类型: {type(image)}")
         if pil_image.mode != "RGB":
             pil_image = pil_image.convert("RGB")
+        
+        # 等比例缩放图像以减小请求大小
+        w, h = pil_image.size
+        if max(w, h) > max_size:
+            ratio = max_size / max(w, h)
+            new_size = (int(w * ratio), int(h * ratio))
+            pil_image = pil_image.resize(new_size, Image.Resampling.LANCZOS)
+        
         buffer = BytesIO()
-        pil_image.save(buffer, format="PNG")
+        # 使用 JPEG 格式和适度压缩，显著减小文件大小
+        pil_image.save(buffer, format="JPEG", quality=85)
         b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
-        return f"data:image/png;base64,{b64}"
+        return f"data:image/jpeg;base64,{b64}"
     
     def __call__(self, query, image_features=None, image=None):
         """
@@ -75,19 +90,42 @@ class UnifiedVisionChat:
             print(f"文本生成错误: {e}")
             return f"错误: {str(e)}"
     
-    def _generate_vision(self, prompt, image):
-        """生成带图像的响应"""
-        try:
-            data_url = self._image_to_data_url(image)
-            message = HumanMessage(content=[
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ])
-            response = self._llm.invoke([message])
-            return getattr(response, "content", str(response)).strip()
-        except Exception as e:
-            print(f"视觉生成错误: {e}")
-            return "small object"  # 返回后备描述
+    def _generate_vision(self, prompt, image, max_retries=3):
+        """生成带图像的响应（带重试机制）"""
+        import time
+        
+        data_url = self._image_to_data_url(image)
+        message = HumanMessage(content=[
+            {"type": "text", "text": prompt},
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": data_url,
+                    "detail": "low"  # 使用低分辨率模式，加快处理速度
+                }
+            },
+        ])
+        
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = self._llm.invoke([message])
+                return getattr(response, "content", str(response)).strip()
+            except Exception as e:
+                last_error = e
+                error_str = str(e).lower()
+                # 对于连接错误和超时，进行重试
+                if "connection" in error_str or "timeout" in error_str or "rate" in error_str:
+                    wait_time = (attempt + 1) * 2  # 指数退避: 2, 4, 6 秒
+                    print(f"视觉生成重试 {attempt + 1}/{max_retries}，等待 {wait_time}s: {e}")
+                    time.sleep(wait_time)
+                else:
+                    # 非重试类错误，直接退出
+                    print(f"视觉生成错误: {e}")
+                    return "small object"
+        
+        print(f"视觉生成失败（已重试 {max_retries} 次）: {last_error}")
+        return "small object"  # 返回后备描述
     
     def load_image(self, image_file):
         """从文件路径加载图像(为了兼容LLaVA接口)"""

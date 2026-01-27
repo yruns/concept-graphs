@@ -42,7 +42,8 @@ cd "${ROOT_DIR}/conceptgraph"
 
 # 配置 LLM 客户端
 export LLM_MODEL="${LLM_MODEL:-gpt-5.2-2025-12-11}"
-export NUM_WORKERS=10
+# 视觉请求较大，降低并发以避免连接错误
+export NUM_WORKERS=3
 
 # 场景设置
 SCENE_NAME=${1:-room0}
