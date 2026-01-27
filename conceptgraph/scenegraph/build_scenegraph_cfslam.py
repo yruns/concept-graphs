@@ -42,9 +42,6 @@ from transformers import logging as hf_logging
 torch.autograd.set_grad_enabled(False)
 hf_logging.set_verbosity_error()
 
-# Import unified client
-from conceptgraph.llava.unified_client import chat_completions
-print("使用统一的LLM客户端")
 
 
 def _sanitize_model_name(model_name: str) -> str:
@@ -476,6 +473,8 @@ def refine_node_captions(args):
     # NOTE: args.mapfile is in cfslam format
     from conceptgraph.slam.slam_classes import MapObjectList
     from conceptgraph.scenegraph.GPTPrompt import GPTPrompt
+    from conceptgraph.utils.llm_client import DEFAULT_MODEL, get_langchain_chat_model
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
     # Load the captions for each segment
     caption_file = Path(args.cachedir) / "cfslam_llava_captions.json"
@@ -494,16 +493,29 @@ def refine_node_captions(args):
     
     # load the prompt
     gpt_messages = GPTPrompt().get_json()
-
-    TIMEOUT = 60  # Timeout in seconds
-
-    base_url = os.getenv("LLM_BASE_URL")
-    model_name = os.getenv("LLM_MODEL")
-    if not base_url or not model_name:
-        raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
+    model_name = os.getenv("LLM_MODEL") or DEFAULT_MODEL
+    if not os.getenv("LLM_MODEL"):
+        print(f"⚠ LLM_MODEL 未设置，默认使用 {model_name}")
     safe_model_name = _sanitize_model_name(model_name)
     responses_savedir = Path(args.cachedir) / f"cfslam_{safe_model_name}_responses"
     responses_savedir.mkdir(exist_ok=True, parents=True)
+
+    def _to_langchain_messages(messages):
+        role_to_cls = {
+            "system": SystemMessage,
+            "assistant": AIMessage,
+            "user": HumanMessage,
+        }
+        lc_messages = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            cls = role_to_cls.get(role, HumanMessage)
+            lc_messages.append(cls(content=content))
+        return lc_messages
+
+    prompt_messages = _to_langchain_messages(gpt_messages)
+    llm = get_langchain_chat_model(deployment_name=model_name)
 
     responses = []
     unsucessful_responses = 0
@@ -530,20 +542,15 @@ def refine_node_captions(args):
 
         start_time = time.time()
     
-        curr_chat_messages = gpt_messages[:]
-        curr_chat_messages.append({"role": "user", "content": preds})
-        
-        # 使用统一客户端
-        chat_completion = chat_completions(
-            messages=curr_chat_messages,
-            model=model_name,
-            base_url=base_url,
-            timeout=TIMEOUT,
-        )
+        curr_chat_messages = prompt_messages[:]
+        curr_chat_messages.append(HumanMessage(content=preds))
+
+        # 使用 llm_client
+        chat_completion = llm.invoke(curr_chat_messages)
         # print output
-        print(chat_completion["choices"][0]["message"]["content"])
+        print(chat_completion.content)
         print(f"Unsucessful responses so far: {unsucessful_responses}")
-        _dict["response"] = chat_completion["choices"][0]["message"]["content"].strip("\n")
+        _dict["response"] = chat_completion.content.strip("\n")
         
         # save the response
         responses.append(json.dumps(_dict))
@@ -589,18 +596,18 @@ def extract_object_tag_from_json_str(json_str):
 def build_scenegraph(args):
     from conceptgraph.slam.slam_classes import MapObjectList
     from conceptgraph.slam.utils import compute_overlap_matrix
+    from conceptgraph.utils.llm_client import DEFAULT_MODEL, get_langchain_chat_model
+    from langchain_core.messages import HumanMessage
 
     # Load the scene map
     scene_map = MapObjectList()
     load_scene_map(args, scene_map)
 
-    model_name = os.getenv("LLM_MODEL")
-    if model_name:
-        safe_model_name = _sanitize_model_name(model_name)
-        response_dir = Path(args.cachedir) / f"cfslam_{safe_model_name}_responses"
-    else:
-        response_dir = Path(args.cachedir) / "cfslam_gpt-4_responses"
-        print("⚠ LLM_MODEL 未设置，默认使用 cfslam_gpt-4_responses")
+    model_name = os.getenv("LLM_MODEL") or DEFAULT_MODEL
+    if not os.getenv("LLM_MODEL"):
+        print(f"⚠ LLM_MODEL 未设置，默认使用 {model_name}")
+    safe_model_name = _sanitize_model_name(model_name)
+    response_dir = Path(args.cachedir) / f"cfslam_{safe_model_name}_responses"
     responses = []
     object_tags = []
     also_indices_to_remove = [] # indices to remove if the json file does not exist
@@ -736,6 +743,7 @@ def build_scenegraph(args):
             minimum_spanning_trees.append(_mst)
 
         TIMEOUT = 25  # timeout in seconds
+        llm = get_langchain_chat_model(deployment_name=model_name)
 
         if not (Path(args.cachedir) / "cfslam_object_relations.json").exists():
             relation_queries = []
@@ -794,16 +802,9 @@ def build_scenegraph(args):
 
                     start_time = time.time()
                     
-                    # 使用统一客户端
-                    base_url = os.getenv("LLM_BASE_URL")
-                    model_name = os.getenv("LLM_MODEL")
-                    if not base_url or not model_name:
-                        raise ValueError("环境变量 LLM_BASE_URL 和 LLM_MODEL 必须显式设置")
-                    chat_completion = chat_completions(
-                        messages=[{"role": "user", "content": DEFAULT_PROMPT + "\n\n" + input_json_str}],
-                        model=model_name,
-                        base_url=base_url,
-                        timeout=TIMEOUT,
+                    # 使用 llm_client
+                    chat_completion = llm.invoke(
+                        [HumanMessage(content=DEFAULT_PROMPT + "\n\n" + input_json_str)]
                     )
                     elapsed_time = time.time() - start_time
                     output_dict = input_dict
@@ -814,7 +815,7 @@ def build_scenegraph(args):
                     else:
                         try:
                             # Attempt to parse the output as a JSON
-                            chat_output_json = json.loads(chat_completion["choices"][0]["message"]["content"])
+                            chat_output_json = json.loads(chat_completion.content)
                             # If the output is a valid JSON, then add it to the output dictionary
                             output_dict["object_relation"] = chat_output_json["object_relation"]
                             output_dict["reason"] = chat_output_json["reason"]

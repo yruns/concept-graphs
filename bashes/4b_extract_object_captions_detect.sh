@@ -40,9 +40,8 @@ fi
 # 进入工作目录
 cd "${ROOT_DIR}/conceptgraph"
 
-# 配置统一LLM客户端
-export LLM_BASE_URL="http://10.21.231.7:8006"
-export LLM_MODEL="gpt-5.2-2025-12-11"
+# 配置 LLM 客户端
+export LLM_MODEL="${LLM_MODEL:-gpt-5.2-2025-12-11}"
 export NUM_WORKERS=10
 
 # 场景设置
@@ -57,7 +56,7 @@ echo "================================================"
 echo "步骤 4B: 提取物体描述 (类别感知模式)"
 echo "================================================"
 echo "场景: ${SCENE_NAME}"
-echo "LLM 服务器: ${LLM_BASE_URL}"
+echo "LLM 客户端: llm_client"
 echo "模型: ${LLM_MODEL}"
 echo ""
 echo "输入: ${REPLICA_ROOT}/${SCENE_NAME}/pcd_saves/${PKL_FILENAME}"
@@ -68,16 +67,8 @@ echo ""
 # 创建缓存目录
 mkdir -p "${CACHE_DIR}"
 
-# 检查 LLM 服务
-if ! curl -s ${LLM_BASE_URL}/healthz > /dev/null 2>&1; then
-    echo "✗ 错误: LLM 服务未运行"
-    echo ""
-    echo "请检查 LLM 服务器: ${LLM_BASE_URL}"
-    echo ""
-    exit 1
-fi
-
-echo "✓ LLM 服务运行正常"
+# LLM 客户端由 llm_client 统一管理
+echo "✓ LLM 客户端已配置"
 echo ""
 
 # 检查输入文件

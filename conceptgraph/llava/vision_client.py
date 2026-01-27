@@ -1,13 +1,15 @@
 """
-统一的视觉模型客户端,替换LLaVA和Ollama视觉调用
+统一的视觉模型客户端,基于 llm_client 进行调用
 """
 import os
 import base64
 from io import BytesIO
+
 from PIL import Image
 import numpy as np
-import torch
-from conceptgraph.llava.unified_client import chat_completions
+from langchain_core.messages import HumanMessage
+
+from conceptgraph.utils.llm_client import DEFAULT_MODEL, get_langchain_chat_model
 
 
 class UnifiedVisionChat:
@@ -19,33 +21,31 @@ class UnifiedVisionChat:
         
         Args:
             model_name: 模型名称(如果不提供,从环境变量读取)
-            base_url: 服务器URL(如果不提供,从环境变量读取)
+            base_url: 保留参数,当前未使用
         """
-        self.model_name = model_name or os.getenv("LLM_MODEL")
-        self.base_url = base_url or os.getenv("LLM_BASE_URL")
-        if not self.model_name or not self.base_url:
-            raise ValueError("必须设置环境变量 LLM_MODEL 和 LLM_BASE_URL，或通过参数传入")
-        print(f"统一视觉客户端初始化: {self.model_name} @ {self.base_url}")
+        self.model_name = model_name or os.getenv("LLM_MODEL") or DEFAULT_MODEL
+        self._llm = get_langchain_chat_model(deployment_name=self.model_name)
+        print(f"统一视觉客户端初始化: {self.model_name} (llm_client)")
     
     def reset(self):
         """重置对话状态(为了兼容LLaVA接口)"""
         # 无状态,不需要重置
         pass
     
-    def _image_to_temp_path(self, image):
-        """将PIL Image保存为临时文件并返回路径"""
-        import tempfile
+    def _image_to_data_url(self, image):
+        """将图像转换为data URL"""
         if isinstance(image, Image.Image):
-            # 保存PIL图像到临时文件
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
-            image.save(temp_file.name, format='PNG')
-            return temp_file.name
+            pil_image = image
         elif isinstance(image, np.ndarray):
-            # 转换numpy数组为PIL然后保存
             pil_image = Image.fromarray(image.astype(np.uint8))
-            return self._image_to_temp_path(pil_image)
         else:
             raise ValueError(f"不支持的图像类型: {type(image)}")
+        if pil_image.mode != "RGB":
+            pil_image = pil_image.convert("RGB")
+        buffer = BytesIO()
+        pil_image.save(buffer, format="PNG")
+        b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/png;base64,{b64}"
     
     def __call__(self, query, image_features=None, image=None):
         """
@@ -69,58 +69,24 @@ class UnifiedVisionChat:
     def _generate_text(self, prompt):
         """生成纯文本响应"""
         try:
-            messages = [
-                {"role": "user", "content": prompt}
-            ]
-            result = chat_completions(
-                messages=messages,
-                model=self.model_name,
-                base_url=self.base_url,
-                timeout=60.0
-            )
-            return result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+            response = self._llm.invoke(prompt)
+            return getattr(response, "content", str(response)).strip()
         except Exception as e:
             print(f"文本生成错误: {e}")
             return f"错误: {str(e)}"
     
     def _generate_vision(self, prompt, image):
         """生成带图像的响应"""
-        # 将图像保存为临时文件
-        temp_path = self._image_to_temp_path(image)
-        
         try:
-            # 使用统一客户端的多模态功能
-            messages = [
-                {
-                    "role": "user", 
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {"type": "image_path", "image_path": temp_path}
-                    ]
-                }
-            ]
-            result = chat_completions(
-                messages=messages,
-                model=self.model_name,
-                base_url=self.base_url,
-                timeout=60.0
-            )
-            response_text = result.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
-            
-            # 清理临时文件
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-            
-            return response_text
+            data_url = self._image_to_data_url(image)
+            message = HumanMessage(content=[
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": data_url}},
+            ])
+            response = self._llm.invoke([message])
+            return getattr(response, "content", str(response)).strip()
         except Exception as e:
             print(f"视觉生成错误: {e}")
-            # 清理临时文件
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
             return "small object"  # 返回后备描述
     
     def load_image(self, image_file):
