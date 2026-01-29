@@ -451,33 +451,70 @@ def main():
     logger.info(f"Categories: {categories}")
     scene_categories = list(categories.keys())
     
-    # Test queries - designed to cover various complexity levels
+    # Test queries - from simple to complex (Level 0 to Level 4)
+    # Actual categories (from affordances): 
+    #   throw_pillow(7), armchair(3), sofa(3), ottoman(3), stool(1), 
+    #   side_table(4), coffee_table(1), floor_lamp(1), door(1), window_blinds(3)
     test_queries = [
-        # Basic queries
-        ("the pillow on the armchair", "01. Simple spatial (ON)"),
-        ("the largest pillow", "02. Superlative (SIZE)"),
+        # ============== Level 0: Single object (no constraints) ==============
+        ("a throw_pillow", "L0-01. Single object"),
+        ("the sofa", "L0-02. Single object (definite)"),
         
-        # Multi-level nesting
-        ("the lamp on the table near the sofa", "03. Two-level nesting (ON + NEAR)"),
-        ("the pillow on the armchair nearest the door", "04. Anchor superlative (ON + NEAREST)"),
+        # ============== Level 1: Single constraint ==============
+        # Superlative
+        ("the largest throw_pillow", "L1-01. Superlative (max size)"),
+        ("the smallest ottoman", "L1-02. Superlative (min size)"),
         
-        # Complex superlatives
-        ("the smallest pillow on the largest armchair", "05. Dual superlative (target + anchor)"),
-        ("the second stool from the left", "06. Ordinal selection"),
+        # Ordinal
+        ("the first ottoman from the left", "L1-03. Ordinal (position)"),
+        ("the second largest side_table", "L1-04. Ordinal (size)"),
         
-        # Multiple spatial constraints on single target
-        ("the lamp near the sofa and near the window", "07. Multi-anchor (AND logic)"),
+        # Single spatial relation
+        ("the throw_pillow near the sofa", "L1-05. Spatial (NEAR)"),
+        ("the ottoman near the coffee_table", "L1-06. Spatial (NEAR)"),
         
-        # Between relation (two anchors)
-        ("the pillow between the sofa and the armchair", "08. Between relation"),
+        # Multi-target
+        ("all throw_pillows", "L1-07. Multi-target (all)"),
+        ("all ottomans", "L1-08. Multi-target (all)"),
         
-        # Three-level nesting
-        ("the lamp on the table near the sofa closest to the door", "09. Three-level nesting"),
+        # ============== Level 2: Two constraints / 2-level nesting ==============
+        # Spatial + Superlative
+        ("the smallest ottoman near the sofa", "L2-01. Spatial + Superlative"),
+        ("the largest throw_pillow near the armchair", "L2-02. Spatial + Superlative"),
         
-        # Complex combinations
-        ("all pillows on armchairs", "10. Multi-target (all)"),
-        ("the red pillow on the sofa", "11. Attribute + spatial"),
-        ("the second largest lamp on a table", "12. Ordinal superlative + spatial"),
+        # Anchor superlative (target near anchor[superlative])
+        ("the armchair nearest the door", "L2-03. Anchor superlative (nearest)"),
+        ("the sofa nearest the coffee_table", "L2-04. Anchor superlative (nearest)"),
+        
+        # 2-level spatial nesting (A near B near C)
+        ("the ottoman near the sofa near the window_blinds", "L2-05. 2-level nesting (NEAR+NEAR)"),
+        ("the throw_pillow near the armchair near the door", "L2-06. 2-level nesting (NEAR+NEAR)"),
+        
+        # Multi-anchor (AND logic)
+        ("the ottoman near the sofa and near the coffee_table", "L2-07. Multi-anchor (AND)"),
+        
+        # Multi-target + spatial
+        ("all throw_pillows near the sofa", "L2-08. Multi-target + Spatial"),
+        
+        # ============== Level 3: Three constraints / 3-level nesting ==============
+        # 3-level spatial nesting
+        ("the throw_pillow near the ottoman near the sofa near the window_blinds", "L3-01. 3-level nesting"),
+        
+        # Spatial + Anchor superlative + constraint
+        ("the throw_pillow near the armchair nearest the door", "L3-02. Spatial + Anchor superlative"),
+        
+        # Superlative + 2-level spatial
+        ("the largest throw_pillow near the sofa near the window_blinds", "L3-03. Superlative + 2-level spatial"),
+        
+        # Multi-anchor + superlative
+        ("the smallest ottoman near the sofa and near the armchair", "L3-04. Multi-anchor + Superlative"),
+        
+        # ============== Level 4: Four+ constraints / 4-level nesting ==============
+        # 4-level spatial nesting
+        ("the throw_pillow near the ottoman near the sofa near the armchair near the door", "L4-01. 4-level nesting"),
+        
+        # Complex combination
+        ("the smallest throw_pillow near the largest sofa nearest the door", "L4-02. Multi-superlative + spatial"),
     ]
     
     all_results = []
