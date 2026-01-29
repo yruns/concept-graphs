@@ -43,7 +43,6 @@ fi
 cd "${ROOT_DIR}"
 
 # 配置LLM (使用VLM模型，需要能处理图像)
-export LLM_BASE_URL="http://10.21.231.7:8006"
 export LLM_MODEL="gpt-5.2-2025-12-11"
 
 # 场景设置
@@ -72,14 +71,6 @@ echo "  - ${CACHE_DIR}/object_affordances.json"
 echo "================================================"
 echo ""
 
-# 检查 LLM 服务
-if ! curl -s ${LLM_BASE_URL}/healthz > /dev/null 2>&1; then
-    echo "✗ 错误: LLM 服务未运行"
-    exit 1
-fi
-echo "✓ LLM 服务运行正常"
-echo ""
-
 # 检查输入文件
 if [ ! -f "${CACHE_DIR}/cfslam_llava_captions.json" ]; then
     echo "✗ 错误: Captions文件不存在"
@@ -93,15 +84,17 @@ if [ ! -f "${PCD_FILE}" ]; then
     echo "   ${PCD_FILE}"
 fi
 
-echo "python -m conceptgraph.segmentation.refine_with_affordance \
-    --cache_dir \"${CACHE_DIR}\" \
-    --pcd_file \"${PCD_FILE}\" \
-    --image_num ${IMAGE_NUM} \
-    --max_workers ${MAX_WORKERS} \
+SCRIPT_FILE="${ROOT_DIR}/conceptgraph/query_scene/refine_with_affordance.py"
+
+echo "python ${SCRIPT_FILE} \\
+    --cache_dir \"${CACHE_DIR}\" \\
+    --pcd_file \"${PCD_FILE}\" \\
+    --image_num ${IMAGE_NUM} \\
+    --max_workers ${MAX_WORKERS} \\
     --output \"${CACHE_DIR}/object_affordances.json\""
 
 # 运行
-python -m conceptgraph.segmentation.refine_with_affordance \
+python "${SCRIPT_FILE}" \
     --cache_dir "${CACHE_DIR}" \
     --pcd_file "${PCD_FILE}" \
     --image_num ${IMAGE_NUM} \

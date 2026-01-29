@@ -6,11 +6,6 @@ import os
 from typing import Optional, Dict, Any
 from langchain_openai import AzureChatOpenAI
 
-# os.environ["http_proxy"] = "socks5h://localhost:10800"
-# os.environ["https_proxy"] = "socks5h://localhost:10800"
-# os.environ["ALL_PROXY"] = "socks5h://localhost:10800"
-# os.environ["all_proxy"] = "socks5h://localhost:10800"
-
 
 # Model configurations mapping
 # Each model has its own endpoint and api_key
