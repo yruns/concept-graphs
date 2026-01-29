@@ -128,12 +128,13 @@ class SpatialRelationChecker:
     """
     
     # Default thresholds (in meters)
+    # Note: Adjusted thresholds for better handling of typical indoor scenes
     DEFAULT_THRESHOLDS = {
         "on_top_of": {"max_horizontal": 0.5, "min_vertical": 0.0, "max_vertical": 1.0},
         "above": {"max_horizontal": 1.0, "min_vertical": 0.1},
         "below": {"max_horizontal": 1.0, "max_vertical": -0.1},
-        "next_to": {"max_distance": 1.0},
-        "near": {"max_distance": 2.0},
+        "next_to": {"max_distance": 1.5},  # Increased from 1.0 for better coverage
+        "near": {"max_distance": 3.0},     # Increased from 2.0 for typical room layouts
         "inside": {"margin": 0.1},
         "between": {"max_distance_ratio": 0.3},  # max distance from line / line length
     }

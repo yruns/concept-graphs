@@ -83,6 +83,7 @@ class QueryExecutor:
         clip_features: Optional[np.ndarray] = None,
         clip_encoder: Optional[Any] = None,
         use_quick_filters: bool = True,
+        strict_mode: bool = False,
     ):
         """
         Initialize the query executor.
@@ -93,12 +94,15 @@ class QueryExecutor:
             clip_features: Optional pre-computed CLIP features for objects
             clip_encoder: Optional CLIP text encoder for semantic matching
             use_quick_filters: Whether to use quick filters for pre-filtering
+            strict_mode: If True, return empty when anchor objects not found.
+                         If False (default), return all candidates as fallback.
         """
         self.objects = objects
         self.relation_checker = relation_checker or SpatialRelationChecker()
         self.clip_features = clip_features
         self.clip_encoder = clip_encoder
         self.use_quick_filters = use_quick_filters
+        self.strict_mode = strict_mode
         
         # Quick filters for fast pre-filtering
         self._quick_filters = QuickFilters() if use_quick_filters else None
@@ -173,7 +177,10 @@ class QueryExecutor:
         if node.node_id and node.node_id in self._cache:
             return self._cache[node.node_id]
         
-        logger.debug(f"[QueryExecutor] Executing node: category='{node.category}'")
+        # Determine nesting depth from node_id (e.g., "root_sc0_a0_sc0_a0" has depth 2)
+        depth = node.node_id.count("_sc") if node.node_id else 0
+        indent = "  " * depth
+        logger.debug(f"[QueryExecutor]{indent} Executing node: category='{node.category}' (depth={depth})")
         
         # Step 1: Find candidates by category
         candidates = self._find_by_category(node.category)
@@ -357,14 +364,31 @@ class QueryExecutor:
         # Execute anchor nodes to get reference objects
         anchor_objects = []
         for anchor_node in constraint.anchors:
+            logger.debug(
+                f"[QueryExecutor] Resolving anchor '{anchor_node.category}' "
+                f"(has {len(anchor_node.spatial_constraints)} nested constraints)"
+            )
             anchor_result = self._execute_node(anchor_node)
+            logger.debug(
+                f"[QueryExecutor] Anchor '{anchor_node.category}' resolved to "
+                f"{len(anchor_result.matched_objects)} objects: "
+                f"{[self._get_category(o) for o in anchor_result.matched_objects[:3]]}"
+                f"{'...' if len(anchor_result.matched_objects) > 3 else ''}"
+            )
             anchor_objects.extend(anchor_result.matched_objects)
         
         if not anchor_objects:
             logger.warning(
                 f"[QueryExecutor] No anchor objects found for relation '{constraint.relation}'"
             )
-            return candidates, {obj.obj_id: 1.0 for obj in candidates}
+            if self.strict_mode:
+                # Strict mode: return empty when anchor not found
+                logger.debug("[QueryExecutor] Strict mode: returning empty result")
+                return [], {}
+            else:
+                # Lenient mode (default): return all candidates as fallback
+                logger.debug("[QueryExecutor] Lenient mode: returning all candidates")
+                return candidates, {obj.obj_id: 1.0 for obj in candidates}
         
         # Phase 1: Quick filter (if available)
         pre_filtered = candidates
@@ -616,6 +640,7 @@ def execute_query(
     query: GroundingQuery,
     objects: List["SceneObject"],
     relation_checker: Optional[SpatialRelationChecker] = None,
+    strict_mode: bool = False,
 ) -> ExecutionResult:
     """
     Execute a grounding query against scene objects.
@@ -624,9 +649,10 @@ def execute_query(
         query: GroundingQuery to execute
         objects: List of scene objects
         relation_checker: Optional spatial relation checker
+        strict_mode: If True, return empty when anchor objects not found
         
     Returns:
         ExecutionResult with matched objects
     """
-    executor = QueryExecutor(objects, relation_checker)
+    executor = QueryExecutor(objects, relation_checker, strict_mode=strict_mode)
     return executor.execute(query)
