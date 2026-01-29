@@ -257,22 +257,27 @@ class QueryNode(BaseModel):
     
     This is the core structure that supports arbitrary nesting depth.
     Each node can have:
-    - A category (required): the type of object to find
+    - Categories (required): the types of objects to find (supports semantic expansion)
     - Attributes (optional): adjectives like "red", "large"
     - Spatial constraints (optional): relations to other objects
     - Select constraint (optional): superlative/ordinal selection
     
     Attributes:
-        category: Object category to search for (e.g., "pillow", "sofa")
+        categories: List of object categories to search for. When user queries a 
+                   general term like "pillow", LLM should include all semantically 
+                   related categories (e.g., ["pillow", "throw_pillow"])
         attributes: List of attribute filters (e.g., ["red", "large"])
         spatial_constraints: List of spatial relation constraints (AND logic)
         select_constraint: Optional selection constraint (nearest, largest, etc.)
         node_id: Unique identifier for execution tracking
     """
     
-    category: str = Field(
+    categories: List[str] = Field(
         ...,
-        description="Object category to search for, e.g., 'pillow', 'sofa', 'door'"
+        min_length=1,
+        description="Object categories to search for. Include ALL semantically related "
+                    "categories from scene. E.g., for 'pillow' query with scene containing "
+                    "[pillow, throw_pillow], return ['pillow', 'throw_pillow']"
     )
     
     attributes: List[str] = Field(
@@ -295,11 +300,16 @@ class QueryNode(BaseModel):
         description="Unique identifier for tracking during execution"
     )
     
+    @property
+    def category(self) -> str:
+        """Primary category (first in list). For backward compatibility."""
+        return self.categories[0] if self.categories else ""
+    
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "category": "pillow",
+                    "categories": ["pillow", "throw_pillow"],
                     "attributes": ["red"],
                     "spatial_constraints": [],
                     "select_constraint": None,
@@ -484,11 +494,11 @@ class GroundingQuery(BaseModel):
                 {
                     "raw_query": "the pillow on the sofa",
                     "root": {
-                        "category": "pillow",
+                        "categories": ["pillow", "throw_pillow"],
                         "spatial_constraints": [
                             {
                                 "relation": "on",
-                                "anchors": [{"category": "sofa"}]
+                                "anchors": [{"categories": ["sofa"]}]
                             }
                         ]
                     },
@@ -506,7 +516,8 @@ class GroundingQuery(BaseModel):
     
     def _collect_categories(self, node: QueryNode, categories: List[str]) -> None:
         """Recursively collect categories from a node."""
-        categories.append(node.category)
+        # Extend with all categories from this node
+        categories.extend(node.categories)
         
         for constraint in node.spatial_constraints:
             for anchor in constraint.anchors:
@@ -529,7 +540,7 @@ def simple_query(category: str, attributes: Optional[List[str]] = None) -> Groun
     return GroundingQuery(
         raw_query=category,
         root=QueryNode(
-            category=category,
+            categories=[category],
             attributes=attributes or []
         )
     )
@@ -546,14 +557,14 @@ def spatial_query(
     return GroundingQuery(
         raw_query=f"{target} {relation} {anchor}",
         root=QueryNode(
-            category=target,
+            categories=[target],
             attributes=target_attributes or [],
             spatial_constraints=[
                 SpatialConstraint(
                     relation=relation,
                     anchors=[
                         QueryNode(
-                            category=anchor,
+                            categories=[anchor],
                             attributes=anchor_attributes or []
                         )
                     ]
@@ -570,12 +581,12 @@ def superlative_query(
     reference: Optional[str] = None,
 ) -> GroundingQuery:
     """Create a superlative query: e.g., 'the nearest chair to the door'."""
-    ref_node = QueryNode(category=reference) if reference else None
+    ref_node = QueryNode(categories=[reference]) if reference else None
     
     return GroundingQuery(
         raw_query=f"{order} {target}" + (f" to {reference}" if reference else ""),
         root=QueryNode(
-            category=target,
+            categories=[target],
             select_constraint=SelectConstraint(
                 constraint_type=ConstraintType.SUPERLATIVE,
                 metric=metric,

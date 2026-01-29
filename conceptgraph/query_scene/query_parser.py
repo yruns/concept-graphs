@@ -48,7 +48,7 @@ The output must be a valid GroundingQuery with the following structure:
 - expect_unique: True if the query uses "the" (singular), False otherwise
 
 Each QueryNode has:
-- category: The object type (MUST be an EXACT string from the provided scene categories, or "UNKNOW" if no suitable match exists)
+- categories: LIST of object types (MUST be EXACT strings from SCENE CATEGORIES, or ["UNKNOW"] if no match)
 - attributes: List of adjective attributes like "red", "large", "wooden"
 - spatial_constraints: List of spatial relations to other objects (filter phase, AND logic)
 - select_constraint: Optional selection like "nearest", "largest", "second" (select phase)
@@ -68,9 +68,13 @@ SelectConstraint structure (for superlative/ordinal):
 - position: Integer for ordinal (1=first, 2=second, etc.)
 
 IMPORTANT RULES:
-1. Every category (including anchors and references) MUST be chosen from SCENE CATEGORIES exactly (case-sensitive, keep underscores). Never invent new categories or pluralize.
-2. If the query uses a synonym, map it to the closest entry in SCENE CATEGORIES (e.g., if SCENE CATEGORIES contains throw_pillow, use that for "pillow"; if it contains sofa, use that for "couch"; if it contains table_lamp, use that for "lamp").
-3. If no suitable category exists in SCENE CATEGORIES, output "UNKNOW" for that node (including anchors and references).
+1. SEMANTIC EXPANSION (CRITICAL): The `categories` field is a LIST. When the user mentions a general term (e.g., "pillow", "lamp", "table"), 
+   include ALL semantically related categories from SCENE CATEGORIES. Examples:
+   - Query "a pillow" with scene [door, pillow, throw_pillow, sofa] → categories: ["pillow", "throw_pillow"]
+   - Query "the lamp" with scene [floor_lamp, table_lamp, sofa] → categories: ["floor_lamp", "table_lamp"]  
+   - Query "a table" with scene [side_table, coffee_table, chair] → categories: ["side_table", "coffee_table"]
+2. Every category in the list MUST be chosen from SCENE CATEGORIES exactly (case-sensitive, keep underscores).
+3. If no suitable category exists in SCENE CATEGORIES, output ["UNKNOW"] (a list with single element).
 4. Before returning, verify every category string is present in SCENE CATEGORIES or is exactly "UNKNOW".
 5. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
 6. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
@@ -78,7 +82,8 @@ IMPORTANT RULES:
 8. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
 9. Spatial constraints are filters (AND logic), select_constraint is for final selection
 10. Keep structure flat when possible - don't over-nest
-11. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is"""
+11. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is
+12. The `categories` list must have at least one element. Include exact matches first, then semantically related categories."""
 
 
 def get_few_shot_examples() -> str:
@@ -86,16 +91,16 @@ def get_few_shot_examples() -> str:
     return '''
 EXAMPLES:
 
-Query: "the pillow on the sofa"
+Query: "the pillow on the sofa" (scene has: pillow, throw_pillow, sofa, door)
 {
   "raw_query": "the pillow on the sofa",
   "root": {
-    "category": "pillow",
+    "categories": ["pillow", "throw_pillow"],
     "attributes": [],
     "spatial_constraints": [
       {
         "relation": "on",
-        "anchors": [{"category": "sofa", "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+        "anchors": [{"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
       }
     ],
     "select_constraint": null
@@ -103,43 +108,43 @@ Query: "the pillow on the sofa"
   "expect_unique": true
 }
 
-Query: "the sofa nearest the door"
+Query: "the sofa nearest the door" (scene has: sofa, door, window)
 {
   "raw_query": "the sofa nearest the door",
   "root": {
-    "category": "sofa",
+    "categories": ["sofa"],
     "attributes": [],
     "spatial_constraints": [],
     "select_constraint": {
       "constraint_type": "superlative",
       "metric": "distance",
       "order": "min",
-      "reference": {"category": "door", "attributes": [], "spatial_constraints": [], "select_constraint": null},
+      "reference": {"categories": ["door"], "attributes": [], "spatial_constraints": [], "select_constraint": null},
       "position": null
     }
   },
   "expect_unique": true
 }
 
-Query: "the pillow on the sofa nearest the door"
+Query: "the pillow on the sofa nearest the door" (scene has: pillow, throw_pillow, sofa, door)
 {
   "raw_query": "the pillow on the sofa nearest the door",
   "root": {
-    "category": "pillow",
+    "categories": ["pillow", "throw_pillow"],
     "attributes": [],
     "spatial_constraints": [
       {
         "relation": "on",
         "anchors": [
           {
-            "category": "sofa",
+            "categories": ["sofa"],
             "attributes": [],
             "spatial_constraints": [],
             "select_constraint": {
               "constraint_type": "superlative",
               "metric": "distance",
               "order": "min",
-              "reference": {"category": "door", "attributes": [], "spatial_constraints": [], "select_constraint": null},
+              "reference": {"categories": ["door"], "attributes": [], "spatial_constraints": [], "select_constraint": null},
               "position": null
             }
           }
@@ -151,16 +156,16 @@ Query: "the pillow on the sofa nearest the door"
   "expect_unique": true
 }
 
-Query: "the red cup on the table"
+Query: "the red cup on the table" (scene has: cup, side_table, coffee_table, chair)
 {
   "raw_query": "the red cup on the table",
   "root": {
-    "category": "cup",
+    "categories": ["cup"],
     "attributes": ["red"],
     "spatial_constraints": [
       {
         "relation": "on",
-        "anchors": [{"category": "table", "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+        "anchors": [{"categories": ["side_table", "coffee_table"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
       }
     ],
     "select_constraint": null
@@ -168,18 +173,18 @@ Query: "the red cup on the table"
   "expect_unique": true
 }
 
-Query: "the lamp between the sofa and the TV"
+Query: "the lamp between the sofa and the TV" (scene has: floor_lamp, table_lamp, sofa, TV)
 {
   "raw_query": "the lamp between the sofa and the TV",
   "root": {
-    "category": "lamp",
+    "categories": ["floor_lamp", "table_lamp"],
     "attributes": [],
     "spatial_constraints": [
       {
         "relation": "between",
         "anchors": [
-          {"category": "sofa", "attributes": [], "spatial_constraints": [], "select_constraint": null},
-          {"category": "TV", "attributes": [], "spatial_constraints": [], "select_constraint": null}
+          {"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null},
+          {"categories": ["TV"], "attributes": [], "spatial_constraints": [], "select_constraint": null}
         ]
       }
     ],
@@ -188,16 +193,16 @@ Query: "the lamp between the sofa and the TV"
   "expect_unique": true
 }
 
-Query: "the largest book on the shelf"
+Query: "the largest book on the shelf" (scene has: book, shelf, table)
 {
   "raw_query": "the largest book on the shelf",
   "root": {
-    "category": "book",
+    "categories": ["book"],
     "attributes": [],
     "spatial_constraints": [
       {
         "relation": "on",
-        "anchors": [{"category": "shelf", "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+        "anchors": [{"categories": ["shelf"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
       }
     ],
     "select_constraint": {
@@ -211,11 +216,11 @@ Query: "the largest book on the shelf"
   "expect_unique": true
 }
 
-Query: "the second chair from the left"
+Query: "the second chair from the left" (scene has: chair, armchair, table)
 {
   "raw_query": "the second chair from the left",
   "root": {
-    "category": "chair",
+    "categories": ["chair", "armchair"],
     "attributes": [],
     "spatial_constraints": [],
     "select_constraint": {
@@ -287,7 +292,7 @@ class QueryParser:
 
         QueryNodeDynamic = create_model(
             "QueryNodeDynamic",
-            category=(Category, Field(...)),
+            categories=(List[Category], Field(..., min_length=1)),  # Changed: List of categories for semantic expansion
             attributes=(List[str], Field(default_factory=list)),
             spatial_constraints=(List[spatial_constraint_ref], Field(default_factory=list)),
             select_constraint=(Optional[select_constraint_ref], None),
@@ -498,7 +503,7 @@ class SimpleQueryParser:
         return GroundingQuery(
             raw_query=query,
             root=QueryNode(
-                category=category,
+                categories=[category],
                 attributes=attributes
             ),
             expect_unique=expect_unique
@@ -516,13 +521,13 @@ class SimpleQueryParser:
             return GroundingQuery(
                 raw_query=query,
                 root=QueryNode(
-                    category=target,
+                    categories=[target],
                     spatial_constraints=[
                         SpatialConstraint(
                             relation="between",
                             anchors=[
-                                QueryNode(category=anchor1),
-                                QueryNode(category=anchor2),
+                                QueryNode(categories=[anchor1]),
+                                QueryNode(categories=[anchor2]),
                             ]
                         )
                     ]
@@ -533,7 +538,7 @@ class SimpleQueryParser:
         # Fallback
         return GroundingQuery(
             raw_query=query,
-            root=QueryNode(category=clean.split()[0]),
+            root=QueryNode(categories=[clean.split()[0]]),
             expect_unique=expect_unique
         )
     
@@ -561,7 +566,7 @@ class SimpleQueryParser:
         return GroundingQuery(
             raw_query=query,
             root=QueryNode(
-                category=target,
+                categories=[target],
                 select_constraint=SelectConstraint(
                     constraint_type=ConstraintType.ORDINAL,
                     metric=metric,
@@ -586,7 +591,7 @@ class SimpleQueryParser:
             # Pattern: "X nearest Y" -> target=X, reference=Y
             target = before.split()[-1] if before else after.split()[0]
             ref_words = after.split()
-            reference = QueryNode(category=ref_words[-1]) if ref_words else None
+            reference = QueryNode(categories=[ref_words[-1]]) if ref_words else None
             
             # Check for spatial constraint in between
             spatial_constraint = None
@@ -597,14 +602,14 @@ class SimpleQueryParser:
                         anchor = rel_parts[1].split()[0]
                         spatial_constraint = SpatialConstraint(
                             relation=rel,
-                            anchors=[QueryNode(category=anchor)]
+                            anchors=[QueryNode(categories=[anchor])]
                         )
                         break
             
             return GroundingQuery(
                 raw_query=query,
                 root=QueryNode(
-                    category=target,
+                    categories=[target],
                     spatial_constraints=[spatial_constraint] if spatial_constraint else [],
                     select_constraint=SelectConstraint(
                         constraint_type=ConstraintType.SUPERLATIVE,
@@ -632,14 +637,14 @@ class SimpleQueryParser:
                     if anchor:
                         spatial_constraint = SpatialConstraint(
                             relation=rel,
-                            anchors=[QueryNode(category=anchor)]
+                            anchors=[QueryNode(categories=[anchor])]
                         )
                     break
             
             return GroundingQuery(
                 raw_query=query,
                 root=QueryNode(
-                    category=target,
+                    categories=[target],
                     spatial_constraints=[spatial_constraint] if spatial_constraint else [],
                     select_constraint=SelectConstraint(
                         constraint_type=ConstraintType.SUPERLATIVE,
@@ -664,12 +669,12 @@ class SimpleQueryParser:
             return GroundingQuery(
                 raw_query=query,
                 root=QueryNode(
-                    category=target,
+                    categories=[target],
                     attributes=attributes,
                     spatial_constraints=[
                         SpatialConstraint(
                             relation=rel,
-                            anchors=[QueryNode(category=anchor)]
+                            anchors=[QueryNode(categories=[anchor])]
                         )
                     ]
                 ),
@@ -679,7 +684,7 @@ class SimpleQueryParser:
         # Fallback
         return GroundingQuery(
             raw_query=query,
-            root=QueryNode(category=clean.split()[0] if clean else "object"),
+            root=QueryNode(categories=[clean.split()[0] if clean else "object"]),
             expect_unique=True
         )
 

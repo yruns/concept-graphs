@@ -307,11 +307,11 @@ def execute_with_tracking(
 
     # Initial candidates: category match before full execution
     root = query_result.root
-    initial_candidates = executor._find_by_category(root.category)
+    initial_candidates = executor._find_by_categories(root.categories)
     initial_ids = set(obj.obj_id for obj in initial_candidates)
     vis.steps.append(FilteringStep(
         step_name="initial_candidates",
-        description=f"Initial candidates for category '{root.category}'",
+        description=f"Initial candidates for categories {root.categories}",
         object_ids=initial_ids,
         color=COLORS['blue']
     ))
@@ -371,10 +371,10 @@ def run_e2e_test(
         parsed = parser.parse(query)
         result["parse_success"] = True
         
-        logger.success(f"Root: {parsed.root.category}")
+        logger.success(f"Root: {parsed.root.categories}")
         if parsed.root.spatial_constraints:
             for sc in parsed.root.spatial_constraints:
-                logger.info(f"  Spatial: {sc.relation} → {[a.category for a in sc.anchors]}")
+                logger.info(f"  Spatial: {sc.relation} → {[a.categories for a in sc.anchors]}")
         if parsed.root.select_constraint:
             sc = parsed.root.select_constraint
             logger.info(f"  Select: {sc.constraint_type.value} ({sc.metric})")
@@ -459,6 +459,13 @@ def main():
         # ============== Level 0: Single object (no constraints) ==============
         ("a throw_pillow", "L0-01. Single object"),
         ("the sofa", "L0-02. Single object (definite)"),
+        
+        # ============== Semantic Expansion Tests ==============
+        # These test the LLM's ability to expand general terms to related categories
+        ("a pillow", "SEM-01. Semantic expansion (pillow -> throw_pillow)"),
+        ("a table", "SEM-02. Semantic expansion (table -> side_table, coffee_table)"),
+        ("the lamp", "SEM-03. Semantic expansion (lamp -> floor_lamp)"),
+        ("a chair", "SEM-04. Semantic expansion (chair -> armchair)"),
         
         # ============== Level 1: Single constraint ==============
         # Superlative

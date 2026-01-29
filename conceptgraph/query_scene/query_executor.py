@@ -180,11 +180,11 @@ class QueryExecutor:
         # Determine nesting depth from node_id (e.g., "root_sc0_a0_sc0_a0" has depth 2)
         depth = node.node_id.count("_sc") if node.node_id else 0
         indent = "  " * depth
-        logger.debug(f"[QueryExecutor]{indent} Executing node: category='{node.category}' (depth={depth})")
+        logger.debug(f"[QueryExecutor]{indent} Executing node: categories={node.categories} (depth={depth})")
         
-        # Step 1: Find candidates by category
-        candidates = self._find_by_category(node.category)
-        logger.debug(f"[QueryExecutor] Found {len(candidates)} candidates for '{node.category}'")
+        # Step 1: Find candidates by categories (supports semantic expansion)
+        candidates = self._find_by_categories(node.categories)
+        logger.debug(f"[QueryExecutor] Found {len(candidates)} candidates for categories {node.categories}")
         
         if not candidates:
             result = ExecutionResult(node_id=node.node_id, matched_objects=[])
@@ -229,7 +229,7 @@ class QueryExecutor:
             node_id=node.node_id,
             matched_objects=candidates,
             scores=scores,
-            metadata={"category": node.category}
+            metadata={"categories": node.categories, "category": node.category}  # Keep category for backward compatibility
         )
         
         if node.node_id:
@@ -237,54 +237,70 @@ class QueryExecutor:
         
         return result
     
+    def _find_by_categories(self, categories: List[str]) -> List["SceneObject"]:
+        """
+        Find objects matching any of the given categories.
+        
+        This method supports semantic expansion - when the LLM returns multiple
+        related categories (e.g., ["pillow", "throw_pillow"]), all matching 
+        objects are returned.
+        
+        Args:
+            categories: List of category strings to search for
+            
+        Returns:
+            List of matched scene objects (deduplicated)
+        """
+        matches = []
+        seen_ids = set()
+        
+        for category in categories:
+            category_lower = category.lower()
+            
+            # Exact match
+            if category_lower in self._category_index:
+                for obj in self._category_index[category_lower]:
+                    if obj.obj_id not in seen_ids:
+                        matches.append(obj)
+                        seen_ids.add(obj.obj_id)
+        
+        # If we found matches, return them
+        if matches:
+            logger.debug(f"[QueryExecutor] Exact match for categories {categories}: {len(matches)} objects")
+            return matches
+        
+        # Fallback: substring matching for each category
+        for category in categories:
+            category_lower = category.lower()
+            for cat, objs in self._category_index.items():
+                if category_lower in cat or cat in category_lower:
+                    for obj in objs:
+                        if obj.obj_id not in seen_ids:
+                            matches.append(obj)
+                            seen_ids.add(obj.obj_id)
+        
+        if matches:
+            logger.debug(f"[QueryExecutor] Substring match for categories {categories}: {len(matches)} objects")
+            return matches
+        
+        # CLIP similarity fallback (if available) - use first category
+        if self.clip_features is not None and self.clip_encoder is not None and categories:
+            return self._find_by_clip_similarity(categories[0])
+        
+        # No matches found
+        logger.warning(f"[QueryExecutor] No match for categories {categories}")
+        return []
+    
     def _find_by_category(self, category: str) -> List["SceneObject"]:
         """
         Find objects matching a category.
         
         Uses exact match first, then substring match, then CLIP similarity.
+        
+        Note: This method is kept for backward compatibility.
+        New code should use _find_by_categories() instead.
         """
-        category_lower = category.lower()
-        
-        # Exact match
-        if category_lower in self._category_index:
-            return list(self._category_index[category_lower])
-        
-        # Substring match
-        matches = []
-        for cat, objs in self._category_index.items():
-            if category_lower in cat or cat in category_lower:
-                matches.extend(objs)
-        
-        if matches:
-            return matches
-        
-        # Try common synonyms
-        synonyms = {
-            "pillow": ["throw_pillow", "cushion"],
-            "couch": ["sofa"],
-            "sofa": ["couch"],
-            "lamp": ["table_lamp", "floor_lamp"],
-            "table": ["side_table", "coffee_table", "dining_table"],
-            "chair": ["armchair", "dining_chair"],
-            "tv": ["television"],
-            "television": ["tv"],
-        }
-        
-        if category_lower in synonyms:
-            for syn in synonyms[category_lower]:
-                if syn in self._category_index:
-                    matches.extend(self._category_index[syn])
-        
-        if matches:
-            return matches
-        
-        # CLIP similarity fallback (if available)
-        if self.clip_features is not None and self.clip_encoder is not None:
-            return self._find_by_clip_similarity(category)
-        
-        # Last resort: return all objects
-        logger.warning(f"[QueryExecutor] No exact match for '{category}', returning all objects")
-        return []
+        return self._find_by_categories([category])
     
     def _find_by_clip_similarity(
         self, category: str, top_k: int = 10, min_similarity: float = 0.2
@@ -365,12 +381,12 @@ class QueryExecutor:
         anchor_objects = []
         for anchor_node in constraint.anchors:
             logger.debug(
-                f"[QueryExecutor] Resolving anchor '{anchor_node.category}' "
+                f"[QueryExecutor] Resolving anchor {anchor_node.categories} "
                 f"(has {len(anchor_node.spatial_constraints)} nested constraints)"
             )
             anchor_result = self._execute_node(anchor_node)
             logger.debug(
-                f"[QueryExecutor] Anchor '{anchor_node.category}' resolved to "
+                f"[QueryExecutor] Anchor {anchor_node.categories} resolved to "
                 f"{len(anchor_result.matched_objects)} objects: "
                 f"{[self._get_category(o) for o in anchor_result.matched_objects[:3]]}"
                 f"{'...' if len(anchor_result.matched_objects) > 3 else ''}"
