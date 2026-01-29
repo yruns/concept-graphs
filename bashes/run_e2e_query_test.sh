@@ -2,10 +2,10 @@
 set -euo pipefail
 
 export PYTHONUNBUFFERED=1
-export http_proxy=socks5h://localhost:18080
-export https_proxy=socks5h://localhost:18080
-export ALL_PROXY=socks5h://localhost:18080
-export all_proxy=socks5h://localhost:18080
+export http_proxy=socks5h://localhost:10800
+export https_proxy=socks5h://localhost:10800
+export ALL_PROXY=socks5h://localhost:10800
+export all_proxy=socks5h://localhost:10800
 
 if [ -f "${HOME}/.bashrc" ]; then
   # shellcheck disable=SC1090
