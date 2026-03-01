@@ -48,7 +48,7 @@ fi
 cd "${ROOT_DIR}/conceptgraph"
 
 # 场景设置
-SCENE_NAME=room0
+SCENE_NAME=${1:-room0}
 THRESHOLD=1.2
 PKL_FILENAME=full_pcd_none_overlap_maskconf0.95_simsum${THRESHOLD}_dbscan.1_merge20_masksub_post.pkl.gz
 

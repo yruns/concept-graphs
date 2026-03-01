@@ -44,7 +44,7 @@ fi
 cd "${ROOT_DIR}/conceptgraph"
 
 # 场景设置
-SCENE_NAME=room0
+SCENE_NAME=${1:-room0}
 
 echo "================================================"
 echo "步骤 1: 提取 2D 分割和 CLIP 特征"

@@ -52,7 +52,7 @@ fi
 cd "${ROOT_DIR}/conceptgraph"
 
 # 场景设置
-SCENE_NAME=room0
+SCENE_NAME=${1:-room0}
 
 echo "================================================"
 echo "步骤 7: 可视化场景图"

@@ -48,7 +48,7 @@ fi
 cd "${ROOT_DIR}/conceptgraph"
 
 # 场景设置
-SCENE_NAME=room0
+SCENE_NAME=${1:-room0}
 
 # 输出设置
 OUTPUT_DIR="${REPLICA_ROOT}/${SCENE_NAME}/visualization"

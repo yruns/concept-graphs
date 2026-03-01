@@ -429,11 +429,27 @@ def run_e2e_test(
 
 def main():
     """Main test function."""
-    scene_path = project_root / "room0"
+    import os
+
+    # Get scene path from environment variable
+    replica_root = os.environ.get("REPLICA_ROOT")
+    scene_name = os.environ.get("SCENE_NAME", "room0")
+
+    if replica_root:
+        scene_path = Path(replica_root) / scene_name
+    else:
+        # Fallback to project_root/room0 for backward compatibility
+        scene_path = project_root / scene_name
+        logger.warning(f"REPLICA_ROOT not set, using fallback: {scene_path}")
+
     output_dir = scene_path / "query_visualizations"
-    
+
     if not scene_path.exists():
         logger.error(f"Scene not found: {scene_path}")
+        logger.info("Please set REPLICA_ROOT environment variable:")
+        logger.info("  export REPLICA_ROOT=/path/to/Replica")
+        logger.info("Or source the env_vars.bash file:")
+        logger.info("  source env_vars.bash")
         return
     
     logger.info("=" * 70)

@@ -44,8 +44,8 @@ fi
 # 进入工作目录
 cd "${ROOT_DIR}/conceptgraph"
 
-# 场景设置
-SCENE_NAME=room0
+# 场景设置 (可通过命令行参数覆盖)
+SCENE_NAME=${1:-room0}
 CLASS_SET=ram
 
 echo "================================================"
