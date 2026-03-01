@@ -369,7 +369,7 @@ class KeyframeSelector:
                 obj_id=len(self.objects),
                 category=category,
                 centroid=centroid,
-                clip_feature=clip_ft,
+                clip_ft=clip_ft,
                 image_idx=image_idx,
                 xyxy=xyxy,
             )
