@@ -12,8 +12,8 @@ Usage:
         --view_id 100
 """
 
-    import argparse
-    import os
+import argparse
+import os
 import gzip
 import pickle
 from pathlib import Path
@@ -394,7 +394,7 @@ def visualize_view_objects(
 def main():
     parser = argparse.ArgumentParser(description="Visualize visibility index")
     parser.add_argument("--scene_path", type=str,
-                       default=os.path.expandvars("$HOME/Datasets/Replica/Replica/room0"))
+                       default=os.path.expandvars("$HOME/Datasets/Replica/room0"))
     parser.add_argument("--obj_id", type=int, default=10, help="Object ID to visualize")
     parser.add_argument("--view_id", type=int, default=100, help="View ID to visualize")
     parser.add_argument("--stride", type=int, default=5)

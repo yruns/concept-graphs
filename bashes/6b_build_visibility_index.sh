@@ -10,6 +10,10 @@
 # Prerequisites:
 #   - Run 2b_build_3d_object_map_detect.sh first to generate 3D objects
 #
+# Usage:
+#   REPLICA_ROOT=/path/to/Replica bash bashes/6b_build_visibility_index.sh [scene_name]
+#   Or export REPLICA_ROOT first, then: bash bashes/6b_build_visibility_index.sh room0
+#
 # Output:
 #   - scene_path/indices/visibility_index.pkl
 # ======================================================================
@@ -17,7 +21,7 @@
 set -e
 
 # Default parameters
-REPLICA_ROOT="${REPLICA_ROOT:-$HOME/Datasets/Replica/Replica}"
+REPLICA_ROOT="${REPLICA_ROOT:-$HOME/Datasets/Replica}"
 SCENE_NAME="${1:-room0}"
 STRIDE="${STRIDE:-5}"
 MAX_DISTANCE="${MAX_DISTANCE:-5.0}"
@@ -25,6 +29,8 @@ USE_DEPTH="${USE_DEPTH:-false}"
 
 # Scene path
 SCENE_PATH="${REPLICA_ROOT}/${SCENE_NAME}"
+
+conda activate conceptgraph
 
 echo "========================================"
 echo "Building Visibility Index"

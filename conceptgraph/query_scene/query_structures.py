@@ -252,25 +252,6 @@ SUPPORTED_RELATIONS_STR = ", ".join(SUPPORTED_RELATIONS)
 
 
 class QueryNode(BaseModel):
-    """
-    Recursive query node representing an object or object set.
-    
-    This is the core structure that supports arbitrary nesting depth.
-    Each node can have:
-    - Categories (required): the types of objects to find (supports semantic expansion)
-    - Attributes (optional): adjectives like "red", "large"
-    - Spatial constraints (optional): relations to other objects
-    - Select constraint (optional): superlative/ordinal selection
-    
-    Attributes:
-        categories: List of object categories to search for. When user queries a 
-                   general term like "pillow", LLM should include all semantically 
-                   related categories (e.g., ["pillow", "throw_pillow"])
-        attributes: List of attribute filters (e.g., ["red", "large"])
-        spatial_constraints: List of spatial relation constraints (AND logic)
-        select_constraint: Optional selection constraint (nearest, largest, etc.)
-        node_id: Unique identifier for execution tracking
-    """
     
     categories: List[str] = Field(
         ...,
@@ -321,21 +302,6 @@ class QueryNode(BaseModel):
 
 
 class SpatialConstraint(BaseModel):
-    """
-    Spatial relation constraint between objects.
-    
-    Represents relations like "on", "near", "beside", "between", etc.
-    The `anchors` list typically contains one object, but can contain
-    multiple for relations like "between A and B".
-    
-    The relation field accepts any string from the LLM, but provides:
-    - `relation_enum`: Normalized SpatialRelation enum for quick filtering
-    - `supports_quick_filter`: Whether coordinate-based filtering is available
-    
-    Attributes:
-        relation: Spatial relation word from LLM (e.g., "on", "on top of", "near")
-        anchors: List of reference objects (usually 1, can be 2 for "between")
-    """
     
     relation: str = Field(
         ...,
@@ -398,18 +364,6 @@ class SpatialConstraint(BaseModel):
 
 
 class SelectConstraint(BaseModel):
-    """
-    Selection constraint for choosing from candidates.
-    
-    Used for superlative (nearest, largest) and ordinal (first, second) selections.
-    
-    Attributes:
-        constraint_type: Type of constraint (superlative, comparative, ordinal)
-        metric: What to measure (distance, size, height, x_position, etc.)
-        order: Sort order (min, max for superlative; asc, desc for ordinal)
-        reference: Reference object for distance-based comparisons (e.g., door for "nearest the door")
-        position: Position for ordinal selection (1 = first, 2 = second, etc.)
-    """
     
     constraint_type: ConstraintType = Field(
         ...,
