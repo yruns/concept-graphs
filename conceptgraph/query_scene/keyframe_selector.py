@@ -1325,14 +1325,45 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         rank: int,
     ) -> Optional[QueryHypothesis]:
         """
-        Build proxy hypothesis using anchor co-objects, lexical overlap, then frequency prior.
+        Build proxy hypothesis for fallback grounding.
+
+        Two scenarios:
+        1. Target category is UNKNOW -> find proxy categories for target
+        2. Anchor category is UNKNOW -> find proxy anchors for spatial relation
+
+        Strategy:
+        - For missing anchors: use target's co-objects as proxy anchors
+        - For missing targets: use anchor's co-objects as proxy targets
+        - Fallback: lexical overlap, then frequency prior
         """
         scene_set = set(self.scene_categories)
+        root_categories = [c for c in direct_query.root.categories if c != "UNKNOW"]
         anchor_categories = self._collect_anchor_categories(direct_query)
+        has_unknown_anchor = self._has_unknown_anchors(direct_query)
+
+        proxy_query = direct_query.model_copy(deep=True)
+        proxy_query.raw_query = f"proxy for: {direct_query.raw_query}"
+
+        # Case 1: Anchor is UNKNOW - find proxy anchors based on target's co-objects
+        if has_unknown_anchor and root_categories:
+            proxy_anchors = self._find_proxy_anchors_for_target(root_categories, lexical_hints)
+            if proxy_anchors:
+                # Replace UNKNOW anchors with proxy categories
+                self._replace_unknown_anchors(proxy_query.root, proxy_anchors)
+                return QueryHypothesis(
+                    kind=HypothesisKind.PROXY,
+                    rank=rank,
+                    grounding_query=proxy_query,
+                    lexical_hints=["proxy_anchor"],
+                )
+
+        # Case 2: Target is UNKNOW - find proxy targets (original logic)
         candidates = []
 
-        # 1) Anchor co-object prior
+        # 2a) Anchor co-object prior
         for anchor_cat in anchor_categories:
+            if anchor_cat == "UNKNOW":
+                continue
             anchor_objs = self.find_objects(anchor_cat, top_k=3)
             for anchor_obj in anchor_objs:
                 for co in anchor_obj.co_objects:
@@ -1348,7 +1379,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             if len(candidates) >= 2:
                 break
 
-        # 2) Lexical overlap prior
+        # 2b) Lexical overlap prior
         if not candidates:
             for cat in self.scene_categories:
                 cat_l = cat.lower()
@@ -1358,7 +1389,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
                 if len(candidates) >= 2:
                     break
 
-        # 3) Frequency prior
+        # 2c) Frequency prior
         if not candidates:
             freq = Counter(obj.object_tag or obj.category for obj in self.objects)
             for cat, _ in freq.most_common():
@@ -1370,8 +1401,6 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         if not candidates:
             return None
 
-        proxy_query = direct_query.model_copy(deep=True)
-        proxy_query.raw_query = f"proxy for: {direct_query.raw_query}"
         proxy_query.root.categories = candidates[:2]
 
         return QueryHypothesis(
@@ -1380,6 +1409,81 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             grounding_query=proxy_query,
             lexical_hints=["proxy"],
         )
+
+    def _find_proxy_anchors_for_target(
+        self,
+        target_categories: List[str],
+        lexical_hints: List[str],
+    ) -> List[str]:
+        """
+        Find proxy anchor categories based on target's typical co-occurrences.
+
+        For example, if target is "pillow" and anchor "bed" is missing,
+        look for where pillows typically appear: sofa, armchair, etc.
+        """
+        scene_set = set(self.scene_categories)
+        candidates = []
+
+        # 1) Use target objects' co-objects as proxy anchors
+        for target_cat in target_categories:
+            target_objs = self.find_objects(target_cat, top_k=5)
+            for obj in target_objs:
+                for co in obj.co_objects:
+                    cat = str(co).strip()
+                    if cat and cat in scene_set and cat not in target_categories and cat not in candidates:
+                        candidates.append(cat)
+                    if len(candidates) >= 3:
+                        break
+                if len(candidates) >= 3:
+                    break
+            if len(candidates) >= 3:
+                break
+
+        # 2) Fallback: find categories that commonly appear near target objects
+        if not candidates:
+            # Use spatial proximity - find what's near the target objects
+            for target_cat in target_categories:
+                target_objs = self.find_objects(target_cat, top_k=3)
+                for target_obj in target_objs:
+                    if target_obj.pcd_np is None or len(target_obj.pcd_np) == 0:
+                        continue
+                    target_center = target_obj.pcd_np.mean(axis=0)
+                    # Find nearby objects
+                    for other_obj in self.objects:
+                        if other_obj.obj_id == target_obj.obj_id:
+                            continue
+                        other_cat = other_obj.object_tag or other_obj.category
+                        if other_cat in target_categories or other_cat in candidates:
+                            continue
+                        if other_obj.pcd_np is None or len(other_obj.pcd_np) == 0:
+                            continue
+                        other_center = other_obj.pcd_np.mean(axis=0)
+                        dist = float(((target_center - other_center) ** 2).sum() ** 0.5)
+                        if dist < 2.0 and other_cat in scene_set:  # within 2 meters
+                            candidates.append(other_cat)
+                        if len(candidates) >= 3:
+                            break
+                    if len(candidates) >= 3:
+                        break
+                if len(candidates) >= 3:
+                    break
+
+        return candidates[:2]
+
+    def _replace_unknown_anchors(self, node: QueryNode, proxy_categories: List[str]) -> None:
+        """Recursively replace UNKNOW anchor categories with proxy categories."""
+        for sc in node.spatial_constraints:
+            for anchor in sc.anchors:
+                if "UNKNOW" in anchor.categories:
+                    anchor.categories = proxy_categories
+                # Recurse into nested anchors
+                self._replace_unknown_anchors(anchor, proxy_categories)
+
+        if node.select_constraint and node.select_constraint.reference:
+            ref = node.select_constraint.reference
+            if "UNKNOW" in ref.categories:
+                ref.categories = proxy_categories
+            self._replace_unknown_anchors(ref, proxy_categories)
 
     def _build_context_hypothesis(
         self,
@@ -1434,6 +1538,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         ]
 
         # Decide whether multi-hypothesis fallback is needed.
+        # Check 1: root target categories
         direct_root_matches = []
         for cat in direct_query.root.categories:
             if cat == "UNKNOW":
@@ -1441,6 +1546,11 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             direct_root_matches.extend(self.find_objects(cat, top_k=1))
 
         needs_multi = (not direct_root_matches) or (direct_query.root.categories == ["UNKNOW"])
+
+        # Check 2: anchor/reference categories (NEW)
+        # If any anchor or reference is UNKNOW, we need multi-hypothesis
+        if not needs_multi:
+            needs_multi = self._has_unknown_anchors(direct_query)
 
         if needs_multi and max_hypotheses > 1:
             proxy = self._build_proxy_hypothesis(
@@ -1466,6 +1576,20 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         )
         output.validate_categories(self.scene_categories)
         return output
+
+    def _has_unknown_anchors(self, grounding_query: GroundingQuery) -> bool:
+        """Check if any anchor or reference in the query has UNKNOW category."""
+        for node in self._iter_query_nodes(grounding_query.root):
+            # Check spatial constraint anchors
+            for sc in node.spatial_constraints:
+                for anchor in sc.anchors:
+                    if "UNKNOW" in anchor.categories:
+                        return True
+            # Check select constraint reference
+            if node.select_constraint and node.select_constraint.reference:
+                if "UNKNOW" in node.select_constraint.reference.categories:
+                    return True
+        return False
 
     def parse_query_nested(self, query: str) -> GroundingQuery:
         """
@@ -1495,6 +1619,10 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
     ) -> Tuple[str, Optional[QueryHypothesis], ExecutionResult]:
         """
         Execute hypotheses by rank and return first non-empty result.
+
+        Special handling:
+        - If a hypothesis has UNKNOW anchors/references, skip it even if executor
+          returns results (because those results don't satisfy the spatial constraint).
         """
         normalized = self.normalize_hypothesis_output(hypothesis_output)
         normalized.validate_categories(self.scene_categories)
@@ -1503,6 +1631,14 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             grounding_query = self.to_grounding_query(hypothesis)
             self.validate_categories_in_scene(grounding_query)
             self.validate_no_mask_leak(grounding_query, hidden_categories)
+
+            # Skip hypothesis if it has UNKNOW anchors - spatial constraint can't be satisfied
+            if self._has_unknown_anchors(grounding_query):
+                logger.debug(
+                    f"[execute_hypotheses] Skipping hypothesis {hypothesis.kind.value} "
+                    f"with UNKNOW anchors"
+                )
+                continue
 
             result = self.execute_query(grounding_query)
             if result.is_empty:
