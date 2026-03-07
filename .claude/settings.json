@@ -8,6 +8,14 @@
             "command": "osascript -e 'display notification \"Processing your request...\" with title \"Claude Code\"'"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"正在处理你的请求...\" with title \"Claude Code\"'"
+          }
+        ]
       }
     ],
     "Notification": [
@@ -16,6 +24,14 @@
           {
             "type": "command",
             "command": "osascript -e 'display notification \"Waiting for your input\" with title \"Claude Code\" sound name \"Ping\"'"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"等待你的输入\" with title \"Claude Code\" sound name \"Ping\"'"
           }
         ]
       }
@@ -28,6 +44,14 @@
             "command": "osascript -e 'display notification \"Confirmation required\" with title \"Claude Code\" sound name \"Glass\"'"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"需要你的确认\" with title \"Claude Code\" sound name \"Glass\"'"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -36,6 +60,14 @@
           {
             "type": "command",
             "command": "osascript -e 'display notification \"Task completed!\" with title \"Claude Code\" sound name \"Hero\"'"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'display notification \"任务完成！\" with title \"Claude Code\" sound name \"Hero\"'"
           }
         ]
       }

@@ -1,8 +1,8 @@
 {
   "ai_tool": "claude",
-  "ttadk_version": "0.3.5",
-  "created_date": "2026-03-01",
-  "preferred_language": "en",
+  "ttadk_version": "0.3.8",
+  "created_date": "2026-03-07",
+  "preferred_language": "zh",
   "preset": "empty",
   "plugins": []
 }
