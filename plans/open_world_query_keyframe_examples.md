@@ -9,6 +9,11 @@
 主计划文件：`plans/open_world_query_keyframe_plan.md`  
 本文件用于补充主计划第 7 节。
 
+v4 执行说明（新增）：
+1. 当前优先链路是先生成 `room0` 的文本 query 基准集并做 GPT-5.2 selector 端到端验证。
+2. 该阶段主产物是 `plans/generated_room0_gpt52_eval/room0_query_benchmark.jsonl` 与 `selector_run.jsonl`。
+3. 本文件中的结构化样本主要用于后续 Qwen3 训练阶段参考。
+
 ## 2. 案例分布
 1. Direct: D01-D04（4例）
 2. Soft: S01-S03（3例）

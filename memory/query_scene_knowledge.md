@@ -40,9 +40,10 @@
 ## 当前阶段状态（2026-03-07）
 1. 已完成：结构化协议、KeyframeSelector 重构、样本资产构建、40/30/30 样本组装、双教师缓存生成链路。
 2. 已完成产物：`plans/generated_open_world/{scene_manifest,query_program_pool,parser_sft}.jsonl`。
-3. 待完成：train/val/test split 固化（scene互斥 + program_hash 去重）、多场景扩样与双教师链路稳定化。
-4. 实网现状：双教师链路可运行且可缓存；若外网/API 不可达，会写入 `generation_report.md` 的 failure 区块并回退模板 query。
-5. 数据生成脚本现状：`build_open_world_samples.py` 仅写出 `parser_sft.jsonl`（不再写 `retrieval_eval.jsonl`）。
+3. 当前执行顺序（v4）：先做 `room0 + GPT-5.2` selector 端到端验证，再做 Qwen3 数据与训练，最后替换解析器到 Qwen3。
+4. 阶段 A 目标产物：`plans/generated_room0_gpt52_eval/{room0_query_benchmark.jsonl,selector_run.jsonl,selector_summary.md}`。
+5. 实网现状：双教师链路可运行且可缓存；若外网/API 不可达，会写入 `generation_report.md` 的 failure 区块并回退模板 query。
+6. 数据生成脚本现状：`build_open_world_samples.py` 仅写出 `parser_sft.jsonl`（不再写 `retrieval_eval.jsonl`）。
 
 ## 开发与回归命令
 - `python -m conceptgraph.query_scene.examples.simple_parse_test`
