@@ -1,211 +1,214 @@
-# Open-World Query Parsing + Keyframe Retrieval 详细执行计划（v2）
+# Open-World Query Parsing + Keyframe Retrieval 详细执行计划（v3）
 
-## 1. 一句话目标
-训练一个仅负责 `query -> 结构化表达` 的 Qwen 解析器，同时用**规则执行器**完成 keyframe 选择，并在 30% 漏检 hard-case 下仍返回有价值证据。
+## 1. 核心目标（按执行顺序）
+1. **先确定 Qwen 的结构化输出协议**（唯一真源）。
+2. **先改 KeyframeSelector 以兼容该协议并可执行**（含必要代码）。
+3. **最后按协议构造 Qwen 训练样本**（40/30/30）。
 
-## 2. 固定约束与关键决策
-1. 数据分布固定：`40% direct + 30% soft + 30% hard`。
-2. hard-case 只占 30%，且通过“故意隐去真实存在类别”构造。
-3. Qwen 只学解析，不学 keyframe 规则。
-4. 解析输出必须兼容：有些 query 只需单解，有些 query 需要多猜想。
-5. 先进 API 用于样本构造：`gpt-5.2-2025-12-11` 与 `gemini-3-pro-preview-new`。
+该顺序是强约束，不可颠倒。
 
-## 3. 交付物清单（必须落地）
-1. `parser_sft.jsonl`：Qwen 训练集，仅解析标签，无 keyframe。
-2. `retrieval_eval.jsonl`：规则选帧评测集，含 `gold_keyframes` 与状态标签。
-3. `scene_manifest.jsonl`：每个 scene 的 3D 类别、2D 类别、对象统计。
-4. `generation_report.md`：样本比例、过滤率、重复率、失败样本原因。
-5. `open_world_query_keyframe_examples.md`：10 个可执行 case（含样本 JSON 与规则执行结果）。
+## 2. 已知问题与本版修复范围
+本版计划明确修复以下问题：
+1. 输出结构不清晰（单解/多猜想不统一）。
+2. 执行接口类型不匹配（`executor.execute(dict)` 不可行，需要代码适配）。
+3. `categories` 与 `scene_categories` 约束冲突。
+4. hard-case 存在掩蔽泄漏（隐藏类又出现在假设中）。
+5. 去掉 `gold_keyframes`（不再作为计划标准字段）。
+7. 缺少可复现实验切分策略（train/val/test）。
+8. 双教师生成缺少可复现控制（prompt版本/缓存/重试）。
+9. 视角与检测帧对齐规则未定义（stride映射风险）。
 
-## 4. 数据格式定义（先定协议，再写脚本）
+## 3. 第一阶段：先确定 Qwen 输出结构（必须先完成）
 
-### 4.1 Qwen训练样本：`parser_sft.jsonl`
-每行一个样本，字段如下：
+### 3.1 输出协议（唯一版本）
+定义 `HypothesisOutputV1`：
 ```json
 {
-  "sample_id": "room0_direct_000123",
-  "bucket": "direct",
-  "scene_id": "room0",
-  "scene_categories": ["throw_pillow", "sofa", "door", "armchair", "side_table"],
-  "user_query": "the throw pillow on the sofa",
-  "target_mode": "single_or_multi",
+  "format_version": "hypothesis_output_v1",
+  "parse_mode": "single" | "multi",
   "hypotheses": [
     {
-      "kind": "direct",
-      "confidence": 1.0,
-      "grounding_query": {
-        "raw_query": "the throw pillow on the sofa",
-        "root": {
-          "categories": ["throw_pillow", "pillow"],
-          "attributes": [],
-          "spatial_constraints": [
-            {
-              "relation": "on",
-              "anchors": [
-                {"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null, "node_id": ""}
-              ]
-            }
-          ],
-          "select_constraint": null,
-          "node_id": ""
-        },
-        "expect_unique": true
-      }
+      "kind": "direct" | "proxy" | "context",
+      "rank": 1,
+      "grounding_query": {"...": "标准 GroundingQuery"},
+      "lexical_hints": ["cushion", "couch"]
     }
   ]
 }
 ```
 
-### 4.2 规则评测样本：`retrieval_eval.jsonl`
-每行一个样本，字段如下：
+### 3.2 协议硬约束
+1. `hypotheses` 长度范围：`1..3`。
+2. `rank` 必须是整数序（1,2,3），不使用浮点 `confidence` 监督。
+3. `grounding_query.root.categories` **必须满足**：
+   - 每个 category 属于输入 `scene_categories`，或
+   - category 等于 `UNKNOW`。
+4. 同义词/近义词信息放在 `lexical_hints`，**不能**放到不在场景内的 `categories`。
+5. `parse_mode=single` 时，`hypotheses` 只能有 1 条，且 `kind=direct`。
+
+### 3.3 协议验收
+1. 给出 JSON Schema 文件 `schema/hypothesis_output_v1.json`。
+2. 给出 20 条样例通过 schema 校验（正例）。
+3. 给出 20 条反例被拒绝（负例，包括类别越界、rank重复、kind非法）。
+
+## 4. 第二阶段：改 KeyframeSelector（必须包含代码实现）
+
+### 4.1 代码改造目标
+1. 兼容 `single` 与 `multi` 输出。
+2. 解决 `dict -> GroundingQuery` 类型不匹配。
+3. 增加 hard-case 防泄漏检查。
+4. 明确 view/frame 对齐逻辑。
+
+### 4.2 必改代码点（计划内任务）
+1. 在 `conceptgraph/query_scene/keyframe_selector.py` 增加解析适配函数：
+```python
+def normalize_hypothesis_output(payload: dict) -> list[dict]:
+    # 1) 兼容老格式（仅 grounding_query）
+    # 2) 校验 format_version/parse_mode/rank
+    # 3) 按 rank 排序返回 hypotheses
+```
+
+2. 在同文件增加类型转换函数：
+```python
+def to_grounding_query(h: dict) -> GroundingQuery:
+    # 使用 GroundingQuery.model_validate(h["grounding_query"])
+    # 失败时抛出结构错误，不允许静默跳过
+```
+
+3. 在执行前增加类别约束函数：
+```python
+def validate_categories_in_scene(gq: GroundingQuery, scene_categories: list[str]) -> None:
+    # categories 必须 in scene_categories or == "UNKNOW"
+```
+
+4. 在 hard-case 评测流程增加泄漏检查：
+```python
+def validate_no_mask_leak(gq: GroundingQuery, hidden_categories: set[str]) -> None:
+    # 若命中隐藏类，样本标记为无效
+```
+
+5. 在选帧流程增加对齐函数：
+```python
+def map_view_to_frame(view_id: int, stride: int) -> int:
+    return view_id * stride
+```
+并加一致性检查：`frame{frame_id:06d}.jpg` 必须存在，否则回退相邻视角。
+
+### 4.3 第二阶段验收
+1. 适配层单测通过：single/multi/老格式均可执行。
+2. `executor.execute` 只接收 `GroundingQuery` 对象。
+3. hard-case 样本中隐藏类泄漏率为 0。
+4. view/frame 映射日志可追踪（view_id、frame_id、文件路径）。
+
+## 5. 第三阶段：构造 Qwen 训练样本（在前两阶段完成后）
+
+### 5.1 样本分布
+固定：`direct 40% + soft 30% + hard 30%`。
+
+### 5.2 样本文件定义
+
+#### 5.2.1 `parser_sft.jsonl`（用于训练 Qwen）
+不包含 keyframe 字段。
+```json
+{
+  "sample_id": "room0_direct_000123",
+  "bucket": "direct",
+  "scene_id": "room0",
+  "scene_categories": ["throw_pillow", "pillow", "sofa", "door"],
+  "user_query": "the throw pillow on the sofa",
+  "target_output": {
+    "format_version": "hypothesis_output_v1",
+    "parse_mode": "single",
+    "hypotheses": [
+      {
+        "kind": "direct",
+        "rank": 1,
+        "grounding_query": {"...": "GroundingQuery"},
+        "lexical_hints": ["pillow"]
+      }
+    ]
+  }
+}
+```
+
+#### 5.2.2 `retrieval_eval.jsonl`（用于规则评测）
+去掉 `gold_keyframes`，保留可复验目标状态与执行期望：
 ```json
 {
   "sample_id": "room0_hard_000031",
   "bucket": "hard",
   "scene_id": "room0",
   "mask_spec": {"type": "M1+M2", "hidden_categories": ["throw_pillow", "pillow"]},
-  "scene_categories_masked": ["sofa", "door", "armchair", "side_table", "throw_blanket", "sofa_seat_cushion"],
+  "scene_categories_masked": ["sofa", "door", "armchair", "side_table"],
   "user_query": "find the cushion on the couch closest to the door",
-  "qwen_target_output": {
-    "target_mode": "single_or_multi",
-    "hypotheses": [
-      {"kind": "direct", "confidence": 0.44, "grounding_query": {"raw_query": "find the cushion on the couch closest to the door", "root": {"categories": ["UNKNOW"], "attributes": [], "spatial_constraints": [{"relation": "on", "anchors": [{"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": {"constraint_type": "superlative", "metric": "distance", "order": "min", "reference": {"categories": ["door"], "attributes": [], "spatial_constraints": [], "select_constraint": null, "node_id": ""}, "position": null}, "node_id": ""}]}], "select_constraint": null, "node_id": ""}, "expect_unique": true}},
-      {"kind": "proxy", "confidence": 0.37, "grounding_query": {"raw_query": "proxy cushion near sofa", "root": {"categories": ["sofa_seat_cushion", "throw_blanket"], "attributes": [], "spatial_constraints": [{"relation": "on", "anchors": [{"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null, "node_id": ""}]}], "select_constraint": null, "node_id": ""}, "expect_unique": false}},
-      {"kind": "context", "confidence": 0.19, "grounding_query": {"raw_query": "sofa near door", "root": {"categories": ["sofa"], "attributes": [], "spatial_constraints": [{"relation": "near", "anchors": [{"categories": ["door"], "attributes": [], "spatial_constraints": [], "select_constraint": null, "node_id": ""}]}], "select_constraint": null, "node_id": ""}, "expect_unique": false}}
-    ]
-  },
-  "gold_status": "proxy_grounded",
-  "gold_keyframes": [88, 95, 103]
+  "qwen_target_output": {"format_version": "hypothesis_output_v1", "parse_mode": "multi", "hypotheses": [...]},
+  "expected_status": "proxy_grounded",
+  "expected_first_hit_kind": "proxy",
+  "expected_support_categories": ["sofa", "door"]
 }
 ```
 
-## 5. 样本构造流程（每一步“输入-动作-输出”）
+### 5.3 hard-case 构造规则（防泄漏版）
+1. `M1`：仅从输入 `scene_categories` 删除目标类。
+2. `M1+M2`：额外从执行对象池移除目标类实例。
+3. 若 `qwen_target_output` 中出现隐藏类，样本直接判废。
 
-### Step 1: 构建 scene manifest
-1. 输入：`room*/pcd_saves/*_post.pkl.gz`、`gsa_detections_*/*.pkl.gz`、`gsa_classes_*.json`。
-2. 动作：统计 3D object_tag 分布、2D class 分布、每类实例数。
-3. 输出：`scene_manifest.jsonl`。
-4. 验收：每个 scene 至少包含 `scene_id/scene_categories/object_counts/classes_2d`。
+### 5.4 双教师可复现控制
+1. 固定 `prompt_version`（如 `p_qwen_sft_v3_20260307`）。
+2. 样本记录 `teacher_model`, `temperature`, `seed`, `prompt_hash`。
+3. 生成结果做缓存：key=`scene_id + program_hash + prompt_hash + model`。
+4. API失败重试固定 2 次，仍失败写入 `generation_report.md`。
 
-### Step 2: 生成结构化程序骨架（不写自然语言）
-1. 输入：`scene_manifest.jsonl`。
-2. 动作：按 L0-L4 程序化生成 `GroundingQuery` 树。
-3. 输出：`query_program_pool.jsonl`。
-4. 验收：每条程序可通过 schema 校验。
+### 5.5 数据切分策略（防泄漏）
+1. 先按 `scene_id` 切：train/val/test 场景互斥。
+2. 再按 `program_hash` 去重：同结构不能跨 split。
+3. paraphrase 仅在同 split 内扩展，禁止跨 split 文本变体。
 
-### Step 3: 桶采样（40/30/30）
-1. 输入：`query_program_pool.jsonl`。
-2. 动作：按比例抽样 direct/soft/hard。
-3. 输出：`bucketed_program_pool.jsonl`。
-4. 验收：比例偏差 <= 1%。
+## 6. 评测方案（去掉 gold_keyframes 后）
+1. `status_acc`：`pred_status == expected_status`。
+2. `first_hit_acc`：`pred_first_hit_kind == expected_first_hit_kind`。
+3. `support_cov`：`expected_support_categories` 是否被证据对象覆盖。
+4. 分桶统计：direct/soft/hard。
 
-### Step 4: hard-case 掩蔽（仅 hard 桶）
-1. 输入：hard 桶程序 + scene manifest。
-2. 动作：执行 M1 或 M1+M2。
-3. 输出：带 `mask_spec` 的 hard 程序集。
-4. 验收：hard 样本目标类在 `scene_categories_masked` 中确实缺失。
+## 7. 执行清单（严格顺序）
+1. [x] 定义并冻结 `HypothesisOutputV1` schema。  
+   - 实现：`schema/hypothesis_output_v1.json`
+2. [x] 在 keyframe_selector 中实现 `normalize_hypothesis_output`。  
+   - 实现：`conceptgraph/query_scene/keyframe_selector.py`
+3. [x] 在 keyframe_selector 中实现 `to_grounding_query`（model_validate）。  
+   - 实现：`conceptgraph/query_scene/keyframe_selector.py`
+4. [x] 增加 `validate_categories_in_scene` 与 `validate_no_mask_leak`。  
+   - 实现：`conceptgraph/query_scene/keyframe_selector.py`
+5. [x] 增加 `map_view_to_frame` 与帧存在性校验。  
+   - 实现：`map_view_to_frame` + `_resolve_keyframe_path`（邻近视角回退 + 路径存在检查）
+6. [x] 跑单测，确认接口与类型稳定。  
+   - 单测：`python -m unittest conceptgraph.query_scene.tests.test_hypothesis_output_schema conceptgraph.query_scene.tests.test_keyframe_selector_hypothesis -v`
+   - 语法检查：`python -m py_compile ...` + `python -m json.tool schema/hypothesis_output_v1.json`
+7. [x] 生成 `scene_manifest.jsonl`。  
+   - 产物：`plans/generated_open_world/scene_manifest.jsonl`
+8. [x] 生成 `query_program_pool.jsonl`。  
+   - 产物：`plans/generated_open_world/query_program_pool.jsonl`（room0 当前 300 条）
+9. [x] 按 40/30/30 采样并构造 hard 掩蔽样本。  
+   - 产物：`plans/generated_open_world/parser_sft.jsonl` 与 `plans/generated_open_world/retrieval_eval.jsonl`  
+   - room0 当前分布：direct=120 / soft=90 / hard=90
+10. [x] 双教师生成 query 并缓存。  
+   - 实现：`conceptgraph/query_scene/open_world_sample_builder.py::TeacherQueryGenerator`  
+   - 脚本：`conceptgraph/scripts/build_open_world_samples.py --use_teacher_llm`  
+   - 缓存 key：`scene_id + program_hash + prompt_hash + model`  
+   - 已支持：`prompt_version/temperature/seed` 元数据记录、固定重试（默认2次）、失败写入 `generation_report.md`
+11. [x] 组装 `parser_sft.jsonl` 与 `retrieval_eval.jsonl`（无 gold_keyframes）。  
+   - 检查：两个文件均无 `gold_keyframes` 字段，hard 桶泄漏检查通过。
+12. [ ] 执行分桶评测并输出 `generation_report.md`。
 
-### Step 5: 生成自由 query（先进 API）
-1. 输入：程序骨架 + scene categories。
-2. 动作：GPT 生成 canonical；Gemini 做 paraphrase。
-3. 输出：`program_to_query_candidates.jsonl`。
-4. 验收：每个程序至少 4 条 query 候选。
+## 8. 验收标准
+1. 协议校验通过率 100%（产线数据）。
+2. keyframe 执行输入无 dict 直传执行器（全量检查）。
+3. hard-case 掩蔽泄漏率 = 0。
+4. train/val/test 结构泄漏率 = 0。
+5. direct 桶不过度猜想（single 输出占比高且错误假设率低）。
+6. hard 桶 `proxy/context` 覆盖显著优于 `no_evidence` 基线。
 
-### Step 6: 结构化标签组装（兼容单解与多猜想）
-1. 输入：query 候选 + 程序骨架 + mask 信息。
-2. 动作：组装 `hypotheses`。
-3. 输出：`parser_sft_raw.jsonl`。
-4. 验收：direct 样本 `len(hypotheses)=1`；hard 样本 `len(hypotheses)>=2`。
-
-### Step 7: 自动过滤
-1. 输入：`parser_sft_raw.jsonl`。
-2. 动作：schema 校验、执行一致性、去重。
-3. 输出：`parser_sft.jsonl`。
-4. 验收：无 schema failure，重复率可控（<5%）。
-
-### Step 8: 生成规则评测集
-1. 输入：hard + soft + direct 子集。
-2. 动作：附加 `gold_status` 与 `gold_keyframes`。
-3. 输出：`retrieval_eval.jsonl`。
-4. 验收：每条样本包含 `gold_status`，且 keyframe 数量满足 `k` 设定。
-
-## 6. 推理规则设计（Qwen输出如何被 KeyframeSelector 执行）
-
-### 6.1 解析输出适配层（兼容单解/多猜想）
-```python
-def normalize_qwen_output(x: dict) -> list:
-    if "hypotheses" in x:
-        return sorted(x["hypotheses"], key=lambda h: h.get("confidence", 0), reverse=True)
-    if "grounding_query" in x:
-        return [{"kind": "direct", "confidence": 1.0, "grounding_query": x["grounding_query"]}]
-    raise ValueError("invalid parser output")
-```
-
-### 6.2 执行逻辑（规则，不依赖学习）
-```python
-def select_keyframes_from_hypotheses(hypotheses, executor, vis_index, k=3):
-    executed = []
-    for h in hypotheses:
-        result = executor.execute(h["grounding_query"])
-        executed.append((h, result))
-        if h["kind"] == "direct" and h["confidence"] >= 0.78 and not result.is_empty:
-            return build_evidence("direct_grounded", h, result, vis_index, k)
-        if not result.is_empty:
-            return build_evidence("proxy_grounded" if h["kind"]=="proxy" else "context_only", h, result, vis_index, k)
-    return build_no_evidence(executed)
-```
-
-### 6.3 候选视角打分
-`S(view) = 0.50*object_coverage + 0.30*anchor_support + 0.20*text_evidence`
-1. `object_coverage`：目标/代理对象在 view 的可见性得分。
-2. `anchor_support`：anchor 对象在 view 的可见性得分。
-3. `text_evidence`：2D 检测类命中 + CLIP query 相似度。
-
-## 7. 三个核心 Case（摘要版，完整10例见补充文档）
-
-完整案例文件：`plans/open_world_query_keyframe_examples.md`
-
-### Case A: direct（40%）
-1. scene categories：`["throw_pillow","sofa","door","armchair"]`
-2. user query：`"the throw pillow on the sofa"`
-3. qwen output：1条 `direct` hypothesis。
-4. 执行：direct 命中 throw_pillow。
-5. 输出：`status=direct_grounded`，返回目标+sofa联合覆盖的 top-k 视角。
-
-### Case B: soft（30%）
-1. scene categories：`["throw_pillow","sofa","door","armchair"]`
-2. user query：`"find the cushion by the couch"`
-3. qwen output：通常1条 direct，`categories=["throw_pillow","pillow"]`。
-4. 执行：direct 命中。
-5. 输出：`status=direct_grounded`，验证同义词鲁棒性。
-
-### Case C: hard（30%）
-1. 原始存在类：`throw_pillow`。
-2. 掩蔽：M1+M2，删除 `throw_pillow/pillow`。
-3. user query：`"find the cushion on the couch closest to the door"`
-4. qwen output：`direct(UNKNOW) + proxy + context`。
-5. 执行：direct 失败，proxy 命中，context 兜底。
-6. 输出：`status=proxy_grounded`，返回 `sofa/door + proxy object` 证据帧。
-
-## 8. 训练与评测执行清单（可打勾）
-1. [ ] 生成 `scene_manifest.jsonl`（room0 先跑通）。
-2. [ ] 生成 `query_program_pool.jsonl`（覆盖 L0-L4）。
-3. [ ] 完成 40/30/30 分桶与 hard 掩蔽。
-4. [ ] 完成 GPT+Gemini query 扩写与过滤。
-5. [ ] 导出 `parser_sft.jsonl`（无 keyframe 字段）。
-6. [ ] 训练 Qwen parser（只吃 parser_sft）。
-7. [ ] 导出 `retrieval_eval.jsonl`（含 gold_keyframes）。
-8. [ ] 接入解析适配层（兼容单解和多猜想）。
-9. [ ] 接入规则选帧与 Evidence Pack 输出。
-10. [ ] 分桶评测 direct/soft/hard 并输出报告。
-
-## 9. 验收指标（分桶报告必须有）
-1. Parser 分布正确率：40/30/30 偏差 <= 1%。
-2. direct 桶：过度猜想率低，单解命中率高。
-3. soft 桶：同义词表达下结构解析准确率稳定。
-4. hard 桶：`proxy_grounded + context_only` 覆盖率显著高于空返回基线。
-5. keyframe：hard 桶 `Recall@3` 比旧流程有明确提升。
-
-## 10. 实施注意事项
-1. 当前本机已完成 3D 产物的 Replica 场景以 `room0` 为主，其他场景先补 pipeline 再扩展。
-2. 若后续改动 query_scene 行为或 pipeline 脚本，必须同步更新 `memory/query_scene_knowledge.md` 与 `memory/bash_scripts_index.md`。
+## 9. 与案例文件的关系
+1. 本计划是“流程与约束”。
+2. 具体样本与可执行 case 在：`plans/open_world_query_keyframe_examples.md`。
+3. 若案例与本计划冲突，以本计划（v3）为准并同步修订案例文件。

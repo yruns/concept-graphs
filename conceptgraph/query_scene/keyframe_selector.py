@@ -32,7 +32,7 @@ import pickle
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Set
+from typing import Any, Dict, List, Optional, Tuple, Set, Iterable
 import numpy as np
 from loguru import logger
 
@@ -46,7 +46,16 @@ except Exception as e:
     logger.warning(f"open_clip not available, CLIP features will not work: {e}")
 
 # Import nested query modules
-from .query_structures import GroundingQuery, QueryNode, SpatialConstraint, SelectConstraint
+from .query_structures import (
+    GroundingQuery,
+    QueryNode,
+    SpatialConstraint,
+    SelectConstraint,
+    HypothesisOutputV1,
+    QueryHypothesis,
+    HypothesisKind,
+    ParseMode,
+)
 from .query_parser import QueryParser
 from .query_executor import QueryExecutor, ExecutionResult
 from .spatial_relations import SpatialRelationChecker, check_relation
@@ -375,13 +384,28 @@ class KeyframeSelector:
             )
             self.objects.append(scene_obj)
         
-        # Stack features for batch similarity computation
+        # Build CLIP feature matrix aligned with self.objects indices.
+        # Missing features keep zero vectors to preserve index consistency.
         valid_features = [f for f in features if f is not None]
         if valid_features:
-            self.object_features = np.stack(valid_features)
-            # L2 normalize
-            norms = np.linalg.norm(self.object_features, axis=1, keepdims=True)
-            self.object_features = self.object_features / (norms + 1e-8)
+            feat_dim = int(valid_features[0].shape[0])
+            aligned = np.zeros((len(features), feat_dim), dtype=np.float32)
+            for idx, feat in enumerate(features):
+                if feat is None:
+                    continue
+                if feat.shape[0] != feat_dim:
+                    logger.warning(
+                        f"Object {idx} clip_ft dimension mismatch: "
+                        f"{feat.shape[0]} vs expected {feat_dim}, skipping"
+                    )
+                    continue
+                aligned[idx] = feat
+
+            # L2 normalize non-zero rows only
+            norms = np.linalg.norm(aligned, axis=1, keepdims=True)
+            non_zero = norms.squeeze(-1) > 0
+            aligned[non_zero] = aligned[non_zero] / (norms[non_zero] + 1e-8)
+            self.object_features = aligned
     
     def _load_affordances(self, affordance_file: Path) -> None:
         """Load and merge affordance data."""
@@ -1114,7 +1138,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             return cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return None
     
-    # ========== Nested Query Support (V2) ==========
+    # ========== Hypothesis-Based Query Support (V3) ==========
     
     def _get_query_parser(self) -> QueryParser:
         """Get or create the query parser."""
@@ -1140,23 +1164,317 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
                 clip_encoder=self._encode_text if HAS_CLIP else None,
             )
         return self._query_executor
-    
-    def parse_query_nested(self, query: str) -> GroundingQuery:
-        """Parse a query into a nested GroundingQuery structure.
-        
-        Supports complex nested queries like:
-        - "the pillow on the sofa nearest the door"
-        - "the red cup on the table in the kitchen"
-        - "the lamp between the sofa and the TV"
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            GroundingQuery with nested structure
+
+    def normalize_hypothesis_output(self, payload: Any) -> HypothesisOutputV1:
+        """
+        Normalize parser payload to HypothesisOutputV1.
+
+        Supported input forms:
+        1) HypothesisOutputV1
+        2) GroundingQuery
+        3) dict with `format_version=hypothesis_output_v1`
+        4) legacy dict with `grounding_query`
+        5) legacy GroundingQuery dict with `root`
+        """
+        if isinstance(payload, HypothesisOutputV1):
+            output = payload
+        elif isinstance(payload, GroundingQuery):
+            output = HypothesisOutputV1.from_direct_query(payload)
+        elif isinstance(payload, dict):
+            if payload.get("format_version") == "hypothesis_output_v1":
+                output = HypothesisOutputV1.model_validate(payload)
+            elif "grounding_query" in payload:
+                grounding_query = self.to_grounding_query(payload)
+                output = HypothesisOutputV1(
+                    parse_mode=ParseMode.SINGLE,
+                    hypotheses=[
+                        QueryHypothesis(
+                            kind=payload.get("kind", HypothesisKind.DIRECT),
+                            rank=1,
+                            grounding_query=grounding_query,
+                            lexical_hints=list(payload.get("lexical_hints", [])),
+                        )
+                    ],
+                )
+            elif "root" in payload:
+                grounding_query = GroundingQuery.model_validate(payload)
+                output = HypothesisOutputV1.from_direct_query(grounding_query)
+            else:
+                raise ValueError("Unsupported payload dict format for hypothesis output")
+        else:
+            raise TypeError(
+                f"Unsupported payload type for hypothesis normalization: {type(payload)}"
+            )
+
+        ordered = output.ordered_hypotheses()
+        if [h.rank for h in ordered] != [h.rank for h in output.hypotheses]:
+            output = HypothesisOutputV1(parse_mode=output.parse_mode, hypotheses=ordered)
+        return output
+
+    def to_grounding_query(self, hypothesis_payload: Any) -> GroundingQuery:
+        """
+        Convert one hypothesis payload to GroundingQuery with strict validation.
+
+        This method never silently skips malformed payload.
+        """
+        if isinstance(hypothesis_payload, GroundingQuery):
+            return hypothesis_payload
+        if isinstance(hypothesis_payload, QueryHypothesis):
+            return hypothesis_payload.grounding_query
+
+        if isinstance(hypothesis_payload, dict):
+            raw = hypothesis_payload.get("grounding_query", hypothesis_payload)
+            if not isinstance(raw, dict):
+                raise ValueError("grounding_query must be a dict payload")
+            return GroundingQuery.model_validate(raw)
+
+        raise TypeError(
+            f"Unsupported hypothesis payload type for GroundingQuery conversion: {type(hypothesis_payload)}"
+        )
+
+    def _iter_query_nodes(self, root: QueryNode):
+        """Depth-first traversal over query nodes."""
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            yield node
+            for constraint in node.spatial_constraints:
+                stack.extend(constraint.anchors)
+            if node.select_constraint and node.select_constraint.reference:
+                stack.append(node.select_constraint.reference)
+
+    def _sanitize_grounding_query_categories(self, grounding_query: GroundingQuery) -> GroundingQuery:
+        """
+        Ensure all executable categories are in scene categories or UNKNOW.
+        """
+        scene_set = set(self.scene_categories)
+        sanitized = grounding_query.model_copy(deep=True)
+
+        for node in self._iter_query_nodes(sanitized.root):
+            cleaned = []
+            seen = set()
+            for cat in node.categories:
+                if cat in scene_set or cat == "UNKNOW":
+                    if cat not in seen:
+                        cleaned.append(cat)
+                        seen.add(cat)
+            node.categories = cleaned if cleaned else ["UNKNOW"]
+
+        return sanitized
+
+    def validate_categories_in_scene(self, grounding_query: GroundingQuery) -> None:
+        """Validate categories in one GroundingQuery against scene categories."""
+        scene_set = set(self.scene_categories)
+        for cat in grounding_query.get_all_categories():
+            if cat != "UNKNOW" and cat not in scene_set:
+                raise ValueError(
+                    f"Category '{cat}' is not in scene categories and is not UNKNOW"
+                )
+
+    def validate_no_mask_leak(
+        self,
+        grounding_query: GroundingQuery,
+        hidden_categories: Optional[Iterable[str]],
+    ) -> None:
+        """Validate one GroundingQuery does not leak hidden categories."""
+        hidden_set = set(hidden_categories or [])
+        if not hidden_set:
+            return
+
+        for cat in grounding_query.get_all_categories():
+            if cat in hidden_set:
+                raise ValueError(f"Masked category leak detected: '{cat}'")
+
+    def _extract_lexical_hints(self, query: str, max_hints: int = 6) -> List[str]:
+        """Extract lightweight lexical hints from query text."""
+        import re
+
+        stopwords = {
+            "the", "a", "an", "on", "in", "at", "to", "of", "and", "or",
+            "find", "show", "me", "please", "closest", "nearest", "near"
+        }
+        tokens = re.findall(r"[a-zA-Z_]+", query.lower())
+        hints = []
+        for tok in tokens:
+            if tok in stopwords or len(tok) <= 2:
+                continue
+            if tok not in hints:
+                hints.append(tok)
+            if len(hints) >= max_hints:
+                break
+        return hints
+
+    def _collect_anchor_categories(self, grounding_query: GroundingQuery) -> List[str]:
+        """Collect unique anchor categories from root constraints."""
+        anchors = []
+        seen = set()
+        for constraint in grounding_query.root.spatial_constraints:
+            for anchor_node in constraint.anchors:
+                for cat in anchor_node.categories:
+                    if cat == "UNKNOW":
+                        continue
+                    if cat not in seen:
+                        anchors.append(cat)
+                        seen.add(cat)
+        return anchors
+
+    def _build_proxy_hypothesis(
+        self,
+        direct_query: GroundingQuery,
+        lexical_hints: List[str],
+        rank: int,
+    ) -> Optional[QueryHypothesis]:
+        """
+        Build proxy hypothesis using anchor co-objects, lexical overlap, then frequency prior.
+        """
+        scene_set = set(self.scene_categories)
+        anchor_categories = self._collect_anchor_categories(direct_query)
+        candidates = []
+
+        # 1) Anchor co-object prior
+        for anchor_cat in anchor_categories:
+            anchor_objs = self.find_objects(anchor_cat, top_k=3)
+            for anchor_obj in anchor_objs:
+                for co in anchor_obj.co_objects:
+                    cat = str(co).strip()
+                    if not cat:
+                        continue
+                    if cat in scene_set and cat not in anchor_categories and cat not in candidates:
+                        candidates.append(cat)
+                    if len(candidates) >= 2:
+                        break
+                if len(candidates) >= 2:
+                    break
+            if len(candidates) >= 2:
+                break
+
+        # 2) Lexical overlap prior
+        if not candidates:
+            for cat in self.scene_categories:
+                cat_l = cat.lower()
+                if any(h in cat_l or cat_l in h for h in lexical_hints):
+                    if cat not in candidates:
+                        candidates.append(cat)
+                if len(candidates) >= 2:
+                    break
+
+        # 3) Frequency prior
+        if not candidates:
+            freq = Counter(obj.object_tag or obj.category for obj in self.objects)
+            for cat, _ in freq.most_common():
+                if cat in scene_set and cat not in anchor_categories and cat not in candidates:
+                    candidates.append(cat)
+                if len(candidates) >= 2:
+                    break
+
+        if not candidates:
+            return None
+
+        proxy_query = direct_query.model_copy(deep=True)
+        proxy_query.raw_query = f"proxy for: {direct_query.raw_query}"
+        proxy_query.root.categories = candidates[:2]
+
+        return QueryHypothesis(
+            kind=HypothesisKind.PROXY,
+            rank=rank,
+            grounding_query=proxy_query,
+            lexical_hints=["proxy"],
+        )
+
+    def _build_context_hypothesis(
+        self,
+        direct_query: GroundingQuery,
+        rank: int,
+    ) -> Optional[QueryHypothesis]:
+        """Build context-only fallback hypothesis anchored to robust scene objects."""
+        anchor_categories = self._collect_anchor_categories(direct_query)
+
+        if not anchor_categories:
+            freq = Counter(obj.object_tag or obj.category for obj in self.objects)
+            anchor_categories = [cat for cat, _ in freq.most_common(1)]
+
+        if not anchor_categories:
+            return None
+
+        context_query = direct_query.model_copy(deep=True)
+        context_query.raw_query = f"context for: {direct_query.raw_query}"
+        context_query.root.categories = anchor_categories[:2]
+        context_query.root.spatial_constraints = []
+        context_query.root.select_constraint = None
+        context_query.expect_unique = False
+
+        return QueryHypothesis(
+            kind=HypothesisKind.CONTEXT,
+            rank=rank,
+            grounding_query=context_query,
+            lexical_hints=["context"],
+        )
+
+    def parse_query_hypotheses(
+        self,
+        query: str,
+        max_hypotheses: int = 3,
+    ) -> HypothesisOutputV1:
+        """
+        Parse query into the unified HypothesisOutputV1 structure.
+
+        The selector now executes this structure directly instead of raw parser dicts.
         """
         parser = self._get_query_parser()
-        return parser.parse(query)
+        direct_query = self._sanitize_grounding_query_categories(parser.parse(query))
+        lexical_hints = self._extract_lexical_hints(query)
+
+        hypotheses: List[QueryHypothesis] = [
+            QueryHypothesis(
+                kind=HypothesisKind.DIRECT,
+                rank=1,
+                grounding_query=direct_query,
+                lexical_hints=lexical_hints,
+            )
+        ]
+
+        # Decide whether multi-hypothesis fallback is needed.
+        direct_root_matches = []
+        for cat in direct_query.root.categories:
+            if cat == "UNKNOW":
+                continue
+            direct_root_matches.extend(self.find_objects(cat, top_k=1))
+
+        needs_multi = (not direct_root_matches) or (direct_query.root.categories == ["UNKNOW"])
+
+        if needs_multi and max_hypotheses > 1:
+            proxy = self._build_proxy_hypothesis(
+                direct_query=direct_query,
+                lexical_hints=lexical_hints,
+                rank=2,
+            )
+            if proxy is not None:
+                hypotheses.append(proxy)
+
+        if needs_multi and len(hypotheses) < max_hypotheses:
+            context = self._build_context_hypothesis(
+                direct_query=direct_query,
+                rank=len(hypotheses) + 1,
+            )
+            if context is not None:
+                hypotheses.append(context)
+
+        parse_mode = ParseMode.MULTI if len(hypotheses) > 1 else ParseMode.SINGLE
+        output = HypothesisOutputV1(
+            parse_mode=parse_mode,
+            hypotheses=hypotheses,
+        )
+        output.validate_categories(self.scene_categories)
+        return output
+
+    def parse_query_nested(self, query: str) -> GroundingQuery:
+        """
+        Backward-compatible nested parsing API.
+
+        Returns the top-ranked direct grounding query from HypothesisOutputV1.
+        """
+        output = self.parse_query_hypotheses(query, max_hypotheses=3)
+        return output.ordered_hypotheses()[0].grounding_query
     
     def execute_query(self, grounding_query: GroundingQuery) -> ExecutionResult:
         """Execute a parsed grounding query.
@@ -1169,111 +1487,181 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         """
         executor = self._get_query_executor()
         return executor.execute(grounding_query)
+
+    def execute_hypotheses(
+        self,
+        hypothesis_output: Any,
+        hidden_categories: Optional[Iterable[str]] = None,
+    ) -> Tuple[str, Optional[QueryHypothesis], ExecutionResult]:
+        """
+        Execute hypotheses by rank and return first non-empty result.
+        """
+        normalized = self.normalize_hypothesis_output(hypothesis_output)
+        normalized.validate_categories(self.scene_categories)
+
+        for hypothesis in normalized.ordered_hypotheses():
+            grounding_query = self.to_grounding_query(hypothesis)
+            self.validate_categories_in_scene(grounding_query)
+            self.validate_no_mask_leak(grounding_query, hidden_categories)
+
+            result = self.execute_query(grounding_query)
+            if result.is_empty:
+                continue
+
+            if hypothesis.kind == HypothesisKind.DIRECT:
+                return "direct_grounded", hypothesis, result
+            if hypothesis.kind == HypothesisKind.PROXY:
+                return "proxy_grounded", hypothesis, result
+            return "context_only", hypothesis, result
+
+        return "no_evidence", None, ExecutionResult(node_id="none", matched_objects=[])
+
+    def map_view_to_frame(self, view_id: int) -> int:
+        """Map sampled view index to original frame index."""
+        return view_id * self.stride
+
+    def _resolve_keyframe_path(self, view_id: int) -> Tuple[Optional[Path], int]:
+        """
+        Resolve image path from view index with stride-aware fallback.
+
+        Returns:
+            Tuple[path, resolved_view_id]
+        """
+        search_order = [view_id, view_id - 1, view_id + 1, view_id - 2, view_id + 2]
+        for cand_view in search_order:
+            if cand_view < 0:
+                continue
+
+            cand_frame = self.map_view_to_frame(cand_view)
+            expected = self.scene_path / "results" / f"frame{cand_frame:06d}.jpg"
+            if expected.exists():
+                return expected, cand_view
+
+            if 0 <= cand_view < len(self.image_paths):
+                fallback = self.image_paths[cand_view]
+                if fallback.exists():
+                    return fallback, cand_view
+
+        return None, view_id
     
     def select_keyframes_v2(
         self,
         query: str,
         k: int = 3,
         strategy: str = "joint_coverage",
+        hidden_categories: Optional[Iterable[str]] = None,
     ) -> KeyframeResult:
-        """Select keyframes using nested query parsing (V2).
-        
-        This method supports complex nested queries like:
-        - "the pillow on the sofa nearest the door"
-        - "the largest book on the shelf above the desk"
-        
-        Args:
-            query: Natural language query
-            k: Number of keyframes to select
-            strategy: Selection strategy
-                - "joint_coverage": Maximize coverage of all relevant objects
-                - "target_only": Only consider target objects
-                
-        Returns:
-            KeyframeResult with selected keyframes and metadata
         """
-        logger.info(f"[V2] Selecting {k} keyframes for: '{query}'")
-        
-        # Step 1: Parse query using nested parser
-        try:
-            grounding_query = self.parse_query_nested(query)
-            logger.info(f"[V2] Parsed query structure: {grounding_query.root.category}")
-        except Exception as e:
-            logger.warning(f"[V2] Nested parsing failed, falling back to simple parsing: {e}")
-            return self.select_keyframes(query, k=k, strategy=strategy)
-        
-        # Step 2: Execute query to find matching objects
-        result = self.execute_query(grounding_query)
-        
-        if result.is_empty:
-            logger.warning(f"[V2] No objects found for query")
+        Select keyframes from the new structured output `HypothesisOutputV1`.
+
+        Execution order:
+        1) Parse query into hypotheses (single or multi)
+        2) Execute hypotheses by rank
+        3) Select keyframes from first successful hypothesis
+        """
+        logger.info(f"[V3] Selecting {k} keyframes for: '{query}'")
+
+        # Step 1: Parse to new unified structure
+        hypothesis_output = self.parse_query_hypotheses(query, max_hypotheses=3)
+        logger.info(
+            f"[V3] Parsed format={hypothesis_output.format_version}, "
+            f"mode={hypothesis_output.parse_mode.value}, "
+            f"hypotheses={len(hypothesis_output.hypotheses)}"
+        )
+
+        # Step 2: Execute hypotheses by rank
+        status, selected_hypothesis, result = self.execute_hypotheses(
+            hypothesis_output=hypothesis_output,
+            hidden_categories=hidden_categories,
+        )
+
+        if status == "no_evidence" or selected_hypothesis is None or result.is_empty:
+            logger.warning("[V3] No executable hypothesis produced evidence")
+            first = hypothesis_output.ordered_hypotheses()[0]
             return KeyframeResult(
                 query=query,
-                target_term=grounding_query.root.category,
+                target_term=first.grounding_query.root.category,
                 anchor_term=None,
                 keyframe_indices=[],
                 keyframe_paths=[],
                 target_objects=[],
                 anchor_objects=[],
                 metadata={
+                    "status": status,
                     "error": "No matching objects",
-                    "grounding_query": grounding_query.model_dump(),
+                    "hypothesis_output": hypothesis_output.model_dump(),
+                    "version": "v3",
                 }
             )
-        
+
         target_objects = result.matched_objects
-        logger.info(f"[V2] Found {len(target_objects)} target objects")
-        
-        # Step 3: Collect all related objects for view coverage
-        all_categories = grounding_query.get_all_categories()
-        anchor_objects = []
-        
-        # Find anchor objects from the query structure
-        for constraint in grounding_query.root.spatial_constraints:
+        selected_query = selected_hypothesis.grounding_query
+        logger.info(
+            f"[V3] Selected hypothesis kind={selected_hypothesis.kind.value}, "
+            f"matched={len(target_objects)}"
+        )
+
+        # Step 3: Collect anchor objects for joint coverage
+        anchor_objects: List[SceneObject] = []
+        for constraint in selected_query.root.spatial_constraints:
             for anchor_node in constraint.anchors:
                 anchor_result = self._get_query_executor()._execute_node(anchor_node)
                 anchor_objects.extend(anchor_result.matched_objects)
-        
+
         # Step 4: Select keyframes
         all_object_ids = [obj.obj_id for obj in target_objects[:5]]
         if anchor_objects:
             all_object_ids.extend([obj.obj_id for obj in anchor_objects[:3]])
-        
+
         if strategy == "joint_coverage":
             keyframe_indices = self.get_joint_coverage_views(all_object_ids, max_views=k)
-        else:  # target_only
+        else:
             keyframe_indices = self.get_joint_coverage_views(
                 [obj.obj_id for obj in target_objects[:5]], max_views=k
             )
-        
-        # Map to image paths
+
         keyframe_paths = []
-        for idx in keyframe_indices:
-            if idx < len(self.image_paths):
-                keyframe_paths.append(self.image_paths[idx])
-        
-        logger.success(f"[V2] Selected keyframes: {keyframe_indices}")
-        
-        # Extract anchor term for result
+        frame_mappings = []
+        for view_id in keyframe_indices:
+            requested_frame_id = self.map_view_to_frame(view_id)
+            path, resolved_view_id = self._resolve_keyframe_path(view_id)
+            resolved_frame_id = self.map_view_to_frame(resolved_view_id)
+            if path is not None:
+                keyframe_paths.append(path)
+            frame_mappings.append(
+                {
+                    "requested_view_id": view_id,
+                    "requested_frame_id": requested_frame_id,
+                    "resolved_view_id": resolved_view_id,
+                    "resolved_frame_id": resolved_frame_id,
+                    "path": str(path) if path is not None else None,
+                }
+            )
+
+        # Extract anchor term
         anchor_term = None
-        if grounding_query.root.spatial_constraints:
-            first_anchor = grounding_query.root.spatial_constraints[0].anchors
-            if first_anchor:
-                anchor_term = first_anchor[0].category
-        
+        if selected_query.root.spatial_constraints:
+            anchors = selected_query.root.spatial_constraints[0].anchors
+            if anchors:
+                anchor_term = anchors[0].category
+
         return KeyframeResult(
             query=query,
-            target_term=grounding_query.root.category,
+            target_term=selected_query.root.category,
             anchor_term=anchor_term,
             keyframe_indices=keyframe_indices,
             keyframe_paths=keyframe_paths,
             target_objects=target_objects,
             anchor_objects=anchor_objects,
             metadata={
+                "status": status,
+                "selected_hypothesis_kind": selected_hypothesis.kind.value,
+                "selected_hypothesis_rank": selected_hypothesis.rank,
                 "strategy": strategy,
                 "all_object_ids": all_object_ids,
-                "grounding_query": grounding_query.model_dump(),
-                "version": "v2",
+                "frame_mappings": frame_mappings,
+                "hypothesis_output": hypothesis_output.model_dump(),
+                "version": "v3",
             }
         )
 

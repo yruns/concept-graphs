@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://concept-graphs.local/schema/hypothesis_output_v1.json",
+  "title": "HypothesisOutputV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "parse_mode",
+    "hypotheses"
+  ],
+  "properties": {
+    "format_version": {
+      "const": "hypothesis_output_v1"
+    },
+    "parse_mode": {
+      "type": "string",
+      "enum": [
+        "single",
+        "multi"
+      ]
+    },
+    "hypotheses": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "$ref": "#/$defs/query_hypothesis"
+      }
+    }
+  },
+  "$defs": {
+    "query_hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "rank",
+        "grounding_query",
+        "lexical_hints"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "proxy",
+            "context"
+          ]
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "grounding_query": {
+          "$ref": "#/$defs/grounding_query"
+        },
+        "lexical_hints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "grounding_query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_query",
+        "root",
+        "expect_unique"
+      ],
+      "properties": {
+        "raw_query": {
+          "type": "string"
+        },
+        "root": {
+          "$ref": "#/$defs/query_node"
+        },
+        "expect_unique": {
+          "type": "boolean"
+        }
+      }
+    },
+    "query_node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "categories",
+        "attributes",
+        "spatial_constraints",
+        "select_constraint",
+        "node_id"
+      ],
+      "properties": {
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "attributes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "spatial_constraints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/spatial_constraint"
+          }
+        },
+        "select_constraint": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/select_constraint"
+            }
+          ]
+        },
+        "node_id": {
+          "type": "string"
+        }
+      }
+    },
+    "spatial_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relation",
+        "anchors"
+      ],
+      "properties": {
+        "relation": {
+          "type": "string"
+        },
+        "anchors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/query_node"
+          }
+        }
+      }
+    },
+    "select_constraint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "constraint_type",
+        "metric",
+        "order",
+        "reference",
+        "position"
+      ],
+      "properties": {
+        "constraint_type": {
+          "type": "string",
+          "enum": [
+            "superlative",
+            "comparative",
+            "ordinal"
+          ]
+        },
+        "metric": {
+          "type": "string"
+        },
+        "order": {
+          "type": "string"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/query_node"
+            }
+          ]
+        },
+        "position": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "parse_mode": {
+            "const": "single"
+          }
+        },
+        "required": [
+          "parse_mode"
+        ]
+      },
+      "then": {
+        "properties": {
+          "hypotheses": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/query_hypothesis"
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "direct"
+                    }
+                  },
+                  "required": [
+                    "kind"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  ]
+}

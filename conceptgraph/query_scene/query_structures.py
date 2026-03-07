@@ -30,7 +30,7 @@ Parsed structure:
 from __future__ import annotations
 
 from enum import Enum
-from typing import List, Optional, ForwardRef
+from typing import List, Optional, ForwardRef, Literal, Iterable
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -481,11 +481,113 @@ class GroundingQuery(BaseModel):
             self._collect_categories(node.select_constraint.reference, categories)
 
 
+class HypothesisKind(str, Enum):
+    """Type of hypothesis for open-world query parsing."""
+
+    DIRECT = "direct"
+    PROXY = "proxy"
+    CONTEXT = "context"
+
+
+class ParseMode(str, Enum):
+    """Parsing mode for hypothesis output."""
+
+    SINGLE = "single"
+    MULTI = "multi"
+
+
+class QueryHypothesis(BaseModel):
+    """One executable hypothesis parsed from user query."""
+
+    kind: HypothesisKind = Field(...)
+    rank: int = Field(..., ge=1, description="1-based priority rank")
+    grounding_query: GroundingQuery = Field(...)
+    lexical_hints: List[str] = Field(
+        default_factory=list,
+        description="Free-form lexical hints (synonyms/paraphrases), not executable categories"
+    )
+
+
+class HypothesisOutputV1(BaseModel):
+    """
+    Unified query parsing output for keyframe selection.
+
+    This is the canonical structured format consumed by KeyframeSelector.
+    It supports both deterministic single-result parsing and multi-hypothesis
+    parsing for open-world fallback.
+    """
+
+    format_version: Literal["hypothesis_output_v1"] = "hypothesis_output_v1"
+    parse_mode: ParseMode = Field(...)
+    hypotheses: List[QueryHypothesis] = Field(..., min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def validate_hypothesis_output(self) -> "HypothesisOutputV1":
+        """Validate rank uniqueness and parse-mode consistency."""
+        ranks = [h.rank for h in self.hypotheses]
+        if len(ranks) != len(set(ranks)):
+            raise ValueError("Hypothesis ranks must be unique")
+        if sorted(ranks) != list(range(1, len(ranks) + 1)):
+            raise ValueError("Hypothesis ranks must be contiguous and start from 1")
+
+        if self.parse_mode == ParseMode.SINGLE:
+            if len(self.hypotheses) != 1:
+                raise ValueError("parse_mode='single' requires exactly one hypothesis")
+            if self.hypotheses[0].kind != HypothesisKind.DIRECT:
+                raise ValueError("parse_mode='single' requires hypothesis kind='direct'")
+
+        return self
+
+    def ordered_hypotheses(self) -> List[QueryHypothesis]:
+        """Return hypotheses sorted by rank ascending."""
+        return sorted(self.hypotheses, key=lambda x: x.rank)
+
+    def validate_categories(self, scene_categories: Iterable[str]) -> None:
+        """
+        Validate that every executable category is in scene categories or UNKNOW.
+        """
+        scene_set = set(scene_categories)
+        for hypothesis in self.hypotheses:
+            for cat in hypothesis.grounding_query.get_all_categories():
+                if cat != "UNKNOW" and cat not in scene_set:
+                    raise ValueError(
+                        f"Category '{cat}' is not in scene categories and is not UNKNOW"
+                    )
+
+    def validate_no_mask_leak(self, hidden_categories: Iterable[str]) -> None:
+        """
+        Validate that hidden categories do not appear in executable hypotheses.
+        """
+        hidden_set = set(hidden_categories)
+        if not hidden_set:
+            return
+        for hypothesis in self.hypotheses:
+            for cat in hypothesis.grounding_query.get_all_categories():
+                if cat in hidden_set:
+                    raise ValueError(f"Masked category leak detected: '{cat}'")
+
+    @classmethod
+    def from_direct_query(cls, grounding_query: GroundingQuery) -> "HypothesisOutputV1":
+        """Build a single-direct output from one grounding query."""
+        return cls(
+            parse_mode=ParseMode.SINGLE,
+            hypotheses=[
+                QueryHypothesis(
+                    kind=HypothesisKind.DIRECT,
+                    rank=1,
+                    grounding_query=grounding_query,
+                )
+            ],
+        )
+
+
 # Rebuild models to resolve forward references
 QueryNode.model_rebuild()
 SpatialConstraint.model_rebuild()
 SelectConstraint.model_rebuild()
 GroundingQuery.model_rebuild()
+QueryHypothesis.model_rebuild()
+HypothesisOutputV1.model_rebuild()
 
 
 # Convenience functions for creating queries programmatically
