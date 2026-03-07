@@ -12,7 +12,7 @@ set -e
 
 # Configuration
 MAX_ITERATIONS=20           # Maximum iterations
-SLEEP_BETWEEN=5             # Seconds between iterations
+SLEEP_BETWEEN=1             # Seconds between iterations
 LOG_FILE="results/auto-claude.log"
 TODO_FILE="TODO.md"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -72,8 +72,8 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
     current_rate=$(get_pass_rate)
     echo "Current pass rate: $current_rate" | tee -a "$LOG_FILE"
 
-    # Execute Claude Code
-    claude -p "
+    # Build prompt
+    PROMPT=$(cat << 'PROMPT_EOF'
 你正在执行 Keyframe Selector 改进任务的自动化迭代。
 
 请查看 TODO.md，选择第一个未完成的任务（标记为 - [ ]）。
@@ -98,10 +98,14 @@ while [ $iteration -lt $MAX_ITERATIONS ]; do
 - 使用 .venv/bin/python 运行 Python
 
 当前 TODO.md 内容：
-$(cat TODO.md)
-" --dangerously-skip-permissions 2>&1 | tee -a "$LOG_FILE"
+PROMPT_EOF
+)
+    PROMPT="${PROMPT}
+$(cat TODO.md)"
 
-    exit_code=$?
+    # Execute Claude Code via ttadk with prompt piped through stdin
+    echo "$PROMPT" | ttadk code --model claude-opus-4-5 -a "--dangerously-skip-permissions --print" 2>&1 | tee -a "$LOG_FILE"
+    exit_code=${PIPESTATUS[1]}
 
     # Check Claude exit status
     if [ $exit_code -ne 0 ]; then
