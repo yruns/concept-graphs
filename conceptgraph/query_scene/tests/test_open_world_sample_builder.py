@@ -174,7 +174,7 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
             _program("room0", 4, "simple", "side_table"),
         ]
 
-        parser_sft, retrieval_eval, counts = build_samples_for_scene(
+        parser_sft, counts = build_samples_for_scene(
             scene_manifest=scene_manifest,
             programs=programs,
             samples_per_scene=10,
@@ -183,7 +183,6 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
 
         self.assertEqual(counts, {"direct": 4, "soft": 3, "hard": 3})
         self.assertEqual(len(parser_sft), 10)
-        self.assertEqual(len(retrieval_eval), 10)
 
         bucket_counter = {"direct": 0, "soft": 0, "hard": 0}
         for rec in parser_sft:
@@ -199,12 +198,6 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
                 self.assertNotIn("mask_spec", rec)
 
         self.assertEqual(bucket_counter, {"direct": 4, "soft": 3, "hard": 3})
-
-        for rec in retrieval_eval:
-            self.assertNotIn("gold_keyframes", rec)
-            if rec["bucket"] == "hard":
-                self.assertEqual(rec["expected_status"], "proxy_grounded")
-                self.assertEqual(rec["expected_first_hit_kind"], "proxy")
 
     def test_build_samples_with_teacher_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -237,7 +230,7 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
                 _program("room0", 4, "simple", "side_table"),
             ]
 
-            parser_sft, retrieval_eval, _ = build_samples_for_scene(
+            parser_sft, _ = build_samples_for_scene(
                 scene_manifest=scene_manifest,
                 programs=programs,
                 samples_per_scene=6,
@@ -246,7 +239,6 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
             )
 
             self.assertEqual(len(parser_sft), 6)
-            self.assertEqual(len(retrieval_eval), 6)
             for rec in parser_sft:
                 self.assertIn("teacher_generation", rec)
                 self.assertIn("selected_model", rec["teacher_generation"])
@@ -286,22 +278,19 @@ class TestOpenWorldSampleBuilder(unittest.TestCase):
             )
 
             self.assertEqual(summary["parser_sft_records"], 10)
-            self.assertEqual(summary["retrieval_eval_records"], 10)
 
             parser_file = out_dir / "parser_sft.jsonl"
-            retrieval_file = out_dir / "retrieval_eval.jsonl"
             report_file = out_dir / "generation_report.md"
 
             self.assertTrue(parser_file.exists())
-            self.assertTrue(retrieval_file.exists())
+            self.assertFalse((out_dir / "retrieval_eval.jsonl").exists())
             self.assertTrue(report_file.exists())
 
             self.assertEqual(len(parser_file.read_text(encoding="utf-8").strip().splitlines()), 10)
-            self.assertEqual(len(retrieval_file.read_text(encoding="utf-8").strip().splitlines()), 10)
 
             report_text = report_file.read_text(encoding="utf-8")
             self.assertIn("parser_sft_records: 10", report_text)
-            self.assertIn("retrieval_eval_records: 10", report_text)
+            self.assertNotIn("retrieval_eval_records", report_text)
 
 
 if __name__ == "__main__":

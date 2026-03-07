@@ -1,4 +1,4 @@
-"""Build parser_sft and retrieval_eval samples from scene/program assets."""
+"""Build parser_sft samples from scene/program assets."""
 
 from __future__ import annotations
 
@@ -458,7 +458,7 @@ def _build_hard_output(
     grounding_query: Dict[str, Any],
     scene_categories_masked: Sequence[str],
     hidden_categories: Sequence[str],
-) -> Tuple[Dict[str, Any], List[str]]:
+) -> Dict[str, Any]:
     base = deepcopy(grounding_query)
     base["raw_query"] = user_query
 
@@ -509,7 +509,7 @@ def _build_hard_output(
             },
         ],
     }
-    return output, support_categories
+    return output
 
 
 def _validate_output(
@@ -529,7 +529,7 @@ def build_samples_for_scene(
     samples_per_scene: int,
     seed: int = 42,
     teacher_generator: Optional[TeacherQueryGenerator] = None,
-) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, int]]:
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     rng = random.Random(seed)
     scene_id = scene_manifest["scene_id"]
     scene_categories = list(scene_manifest["scene_categories"])
@@ -546,7 +546,6 @@ def build_samples_for_scene(
     }
 
     parser_sft: List[Dict[str, Any]] = []
-    retrieval_eval: List[Dict[str, Any]] = []
 
     for bucket in ["direct", "soft", "hard"]:
         for idx, program in enumerate(bucket_programs[bucket]):
@@ -600,20 +599,8 @@ def build_samples_for_scene(
                     "user_query": user_query,
                     "target_output": target_output,
                 }
-                retrieval_record = {
-                    "sample_id": sample_id,
-                    "bucket": bucket,
-                    "scene_id": scene_id,
-                    "mask_spec": {"type": "none", "hidden_categories": []},
-                    "scene_categories_masked": scene_categories,
-                    "user_query": user_query,
-                    "qwen_target_output": target_output,
-                    "expected_status": "direct_grounded",
-                    "expected_first_hit_kind": "direct",
-                    "expected_support_categories": [program["target_category"]] + list(program.get("anchor_categories", [])),
-                }
             else:
-                target_output, support_categories = _build_hard_output(
+                target_output = _build_hard_output(
                     user_query=user_query,
                     grounding_query=gq,
                     scene_categories_masked=scene_categories_effective,
@@ -642,31 +629,17 @@ def build_samples_for_scene(
                     "user_query": user_query,
                     "target_output": target_output,
                 }
-                retrieval_record = {
-                    "sample_id": sample_id,
-                    "bucket": bucket,
-                    "scene_id": scene_id,
-                    "mask_spec": mask_spec,
-                    "scene_categories_masked": scene_categories_effective,
-                    "user_query": user_query,
-                    "qwen_target_output": target_output,
-                    "expected_status": "proxy_grounded",
-                    "expected_first_hit_kind": "proxy",
-                    "expected_support_categories": support_categories,
-                }
 
             if teacher_meta is not None:
                 parser_sft_record["teacher_generation"] = teacher_meta
-                retrieval_record["teacher_generation"] = teacher_meta
 
-            # Guarantee retrieval_eval has no gold_keyframes.
-            retrieval_record.pop("gold_keyframes", None)
+            # Guarantee parser SFT records do not carry legacy labels.
             parser_sft_record.pop("gold_keyframes", None)
+            parser_sft_record.pop("gold_status", None)
 
             parser_sft.append(parser_sft_record)
-            retrieval_eval.append(retrieval_record)
 
-    return parser_sft, retrieval_eval, counts
+    return parser_sft, counts
 
 
 def build_samples_from_assets(
@@ -705,7 +678,6 @@ def build_samples_from_assets(
         )
 
     parser_sft_all: List[Dict[str, Any]] = []
-    retrieval_eval_all: List[Dict[str, Any]] = []
     scene_reports = []
 
     for scene_idx, scene in enumerate(scene_manifest):
@@ -714,7 +686,7 @@ def build_samples_from_assets(
         if not programs:
             continue
 
-        parser_sft, retrieval_eval, counts = build_samples_for_scene(
+        parser_sft, counts = build_samples_for_scene(
             scene_manifest=scene,
             programs=programs,
             samples_per_scene=samples_per_scene,
@@ -722,7 +694,6 @@ def build_samples_from_assets(
             teacher_generator=teacher_generator,
         )
         parser_sft_all.extend(parser_sft)
-        retrieval_eval_all.extend(retrieval_eval)
 
         scene_reports.append(
             {
@@ -733,16 +704,13 @@ def build_samples_from_assets(
         )
 
     parser_path = output_dir / "parser_sft.jsonl"
-    retrieval_path = output_dir / "retrieval_eval.jsonl"
     report_path = output_dir / "generation_report.md"
 
     parser_count = write_jsonl(parser_sft_all, parser_path)
-    retrieval_count = write_jsonl(retrieval_eval_all, retrieval_path)
 
     with open(report_path, "w", encoding="utf-8") as f:
         f.write("# Sample Generation Report\n\n")
         f.write(f"- parser_sft_records: {parser_count}\n")
-        f.write(f"- retrieval_eval_records: {retrieval_count}\n")
         f.write(f"- samples_per_scene: {samples_per_scene}\n")
         f.write(f"- seed: {seed}\n")
 
@@ -781,7 +749,6 @@ def build_samples_from_assets(
 
     summary = {
         "parser_sft_records": parser_count,
-        "retrieval_eval_records": retrieval_count,
         "scene_reports": scene_reports,
         "output_dir": str(output_dir.resolve()),
         "use_teacher_llm": use_teacher_llm,

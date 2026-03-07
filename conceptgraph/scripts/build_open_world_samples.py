@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Build parser_sft.jsonl and retrieval_eval.jsonl from open-world assets."""
+"""Build parser_sft.jsonl from open-world assets."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from conceptgraph.query_scene.open_world_sample_builder import (
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build open-world training/eval samples")
+    parser = argparse.ArgumentParser(description="Build open-world parser training samples")
     parser.add_argument(
         "--scene_manifest",
         type=Path,

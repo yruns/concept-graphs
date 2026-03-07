@@ -23,7 +23,7 @@
   - 生成 open-world 数据构建基础资产：`scene_manifest`、`query_program_pool`。
   - 提供类别抽取、program hash 去重、JSONL 写出工具。
 - `conceptgraph/query_scene/open_world_sample_builder.py`
-  - 从 `scene_manifest + query_program_pool` 组装 `parser_sft/retrieval_eval`。
+  - 从 `scene_manifest + query_program_pool` 组装 `parser_sft` 训练样本（含 direct/soft/hard 分桶）。
   - 固定 40/30/30（direct/soft/hard）分桶采样，hard 桶执行掩蔽与泄漏校验。
   - 支持双教师 query 生成：`TeacherQueryGenerator`（模型缓存、重试、prompt版本追踪、失败报告）。
 
@@ -37,6 +37,13 @@
 7. 状态输出：`direct_grounded` / `proxy_grounded` / `context_only` / `no_evidence`。
 8. 关键帧：依据 `object_to_views` / `view_to_objects` 选帧，默认联合覆盖多对象，并输出 `requested/resolved view/frame` 映射。
 
+## 当前阶段状态（2026-03-07）
+1. 已完成：结构化协议、KeyframeSelector 重构、样本资产构建、40/30/30 样本组装、双教师缓存生成链路。
+2. 已完成产物：`plans/generated_open_world/{scene_manifest,query_program_pool,parser_sft}.jsonl`。
+3. 待完成：train/val/test split 固化（scene互斥 + program_hash 去重）、多场景扩样与双教师链路稳定化。
+4. 实网现状：双教师链路可运行且可缓存；若外网/API 不可达，会写入 `generation_report.md` 的 failure 区块并回退模板 query。
+5. 数据生成脚本现状：`build_open_world_samples.py` 仅写出 `parser_sft.jsonl`（不再写 `retrieval_eval.jsonl`）。
+
 ## 开发与回归命令
 - `python -m conceptgraph.query_scene.examples.simple_parse_test`
 - `python -m conceptgraph.query_scene.examples.test_nested_query_parsing --llm_model gpt-5.2-2025-12-11`
@@ -46,3 +53,5 @@
 - `python conceptgraph/scripts/build_open_world_dataset_assets.py --scene room0=/abs/path/to/room0 --output_dir plans/generated_open_world`
 - `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world --samples_per_scene 300`
 - `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world_teacher --samples_per_scene 300 --use_teacher_llm --teacher_models gpt-5.2-2025-12-11,gemini-3-pro-preview-new --teacher_max_retries 2`
+- 下一步（数据工程）建议命令：
+  - `python conceptgraph/scripts/build_open_world_splits.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_pool plans/generated_open_world/query_program_pool.jsonl --output plans/generated_open_world/split_manifest.json`

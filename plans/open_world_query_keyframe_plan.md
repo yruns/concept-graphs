@@ -13,10 +13,10 @@
 2. 执行接口类型不匹配（`executor.execute(dict)` 不可行，需要代码适配）。
 3. `categories` 与 `scene_categories` 约束冲突。
 4. hard-case 存在掩蔽泄漏（隐藏类又出现在假设中）。
-5. 去掉 `gold_keyframes`（不再作为计划标准字段）。
-7. 缺少可复现实验切分策略（train/val/test）。
-8. 双教师生成缺少可复现控制（prompt版本/缓存/重试）。
-9. 视角与检测帧对齐规则未定义（stride映射风险）。
+5. 样本字段仍有历史冗余（已去除 `gold_keyframes/gold_status`）。
+6. 缺少可复现实验切分策略（train/val/test）。
+7. 双教师生成缺少可复现控制（prompt版本/缓存/重试）。
+8. 视角与检测帧对齐规则未定义（stride映射风险）。
 
 ## 3. 第一阶段：先确定 Qwen 输出结构（必须先完成）
 
@@ -81,7 +81,7 @@ def validate_categories_in_scene(gq: GroundingQuery, scene_categories: list[str]
     # categories 必须 in scene_categories or == "UNKNOW"
 ```
 
-4. 在 hard-case 评测流程增加泄漏检查：
+4. 在 hard-case 数据构建流程增加泄漏检查：
 ```python
 def validate_no_mask_leak(gq: GroundingQuery, hidden_categories: set[str]) -> None:
     # 若命中隐藏类，样本标记为无效
@@ -131,27 +131,10 @@ def map_view_to_frame(view_id: int, stride: int) -> int:
 }
 ```
 
-#### 5.2.2 `retrieval_eval.jsonl`（用于规则评测）
-去掉 `gold_keyframes`，保留可复验目标状态与执行期望：
-```json
-{
-  "sample_id": "room0_hard_000031",
-  "bucket": "hard",
-  "scene_id": "room0",
-  "mask_spec": {"type": "M1+M2", "hidden_categories": ["throw_pillow", "pillow"]},
-  "scene_categories_masked": ["sofa", "door", "armchair", "side_table"],
-  "user_query": "find the cushion on the couch closest to the door",
-  "qwen_target_output": {"format_version": "hypothesis_output_v1", "parse_mode": "multi", "hypotheses": [...]},
-  "expected_status": "proxy_grounded",
-  "expected_first_hit_kind": "proxy",
-  "expected_support_categories": ["sofa", "door"]
-}
-```
-
 ### 5.3 hard-case 构造规则（防泄漏版）
 1. `M1`：仅从输入 `scene_categories` 删除目标类。
 2. `M1+M2`：额外从执行对象池移除目标类实例。
-3. 若 `qwen_target_output` 中出现隐藏类，样本直接判废。
+3. 若 `target_output` 中出现隐藏类，样本直接判废。
 
 ### 5.4 双教师可复现控制
 1. 固定 `prompt_version`（如 `p_qwen_sft_v3_20260307`）。
@@ -164,11 +147,11 @@ def map_view_to_frame(view_id: int, stride: int) -> int:
 2. 再按 `program_hash` 去重：同结构不能跨 split。
 3. paraphrase 仅在同 split 内扩展，禁止跨 split 文本变体。
 
-## 6. 评测方案（去掉 gold_keyframes 后）
-1. `status_acc`：`pred_status == expected_status`。
-2. `first_hit_acc`：`pred_first_hit_kind == expected_first_hit_kind`。
-3. `support_cov`：`expected_support_categories` 是否被证据对象覆盖。
-4. 分桶统计：direct/soft/hard。
+## 6. 数据质量检查
+1. 结构检查：`target_output` 必须通过 `HypothesisOutputV1` 校验。
+2. 类别检查：`categories` 必须在 `scene_categories` 或为 `UNKNOW`。
+3. hard-case 检查：`hidden_categories` 不得出现在可执行假设中。
+4. 字段检查：`parser_sft` 不得包含 `gold_keyframes`、`gold_status` 等历史冗余字段。
 
 ## 7. 执行清单（严格顺序）
 1. [x] 定义并冻结 `HypothesisOutputV1` schema。  
@@ -189,24 +172,28 @@ def map_view_to_frame(view_id: int, stride: int) -> int:
 8. [x] 生成 `query_program_pool.jsonl`。  
    - 产物：`plans/generated_open_world/query_program_pool.jsonl`（room0 当前 300 条）
 9. [x] 按 40/30/30 采样并构造 hard 掩蔽样本。  
-   - 产物：`plans/generated_open_world/parser_sft.jsonl` 与 `plans/generated_open_world/retrieval_eval.jsonl`  
+   - 产物：`plans/generated_open_world/parser_sft.jsonl`  
    - room0 当前分布：direct=120 / soft=90 / hard=90
 10. [x] 双教师生成 query 并缓存。  
    - 实现：`conceptgraph/query_scene/open_world_sample_builder.py::TeacherQueryGenerator`  
    - 脚本：`conceptgraph/scripts/build_open_world_samples.py --use_teacher_llm`  
    - 缓存 key：`scene_id + program_hash + prompt_hash + model`  
    - 已支持：`prompt_version/temperature/seed` 元数据记录、固定重试（默认2次）、失败写入 `generation_report.md`
-11. [x] 组装 `parser_sft.jsonl` 与 `retrieval_eval.jsonl`（无 gold_keyframes）。  
-   - 检查：两个文件均无 `gold_keyframes` 字段，hard 桶泄漏检查通过。
-12. [ ] 执行分桶评测并输出 `generation_report.md`。
+11. [x] 组装 `parser_sft.jsonl`（无 gold_keyframes）。  
+   - 检查：文件无 `gold_keyframes/gold_status` 字段，hard 桶泄漏检查通过。
+12. [ ] 实现并固化 train/val/test 切分（scene 互斥 + program_hash 去重）。  
+   - 目标产物：`plans/generated_open_world/split_manifest.json`、`plans/generated_open_world/split_stats.md`
+13. [ ] 多场景扩样（按同一协议扩展 scene_manifest/program_pool/parser_sft）。  
+   - 目标：覆盖更多场景与类别组合，保持 40/30/30 分布。
+14. [ ] 双教师链路稳定化。  
+   - 目标：降低 API 失败率，提升缓存命中复用，输出生成过程报告。
 
 ## 8. 验收标准
 1. 协议校验通过率 100%（产线数据）。
 2. keyframe 执行输入无 dict 直传执行器（全量检查）。
 3. hard-case 掩蔽泄漏率 = 0。
 4. train/val/test 结构泄漏率 = 0。
-5. direct 桶不过度猜想（single 输出占比高且错误假设率低）。
-6. hard 桶 `proxy/context` 覆盖显著优于 `no_evidence` 基线。
+5. 双教师生成链路可复现（prompt_version / prompt_hash / cache_key 稳定）。
 
 ## 9. 与案例文件的关系
 1. 本计划是“流程与约束”。

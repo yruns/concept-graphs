@@ -1,7 +1,6 @@
 # Sample Generation Report
 
 - parser_sft_records: 300
-- retrieval_eval_records: 300
 - samples_per_scene: 300
 - seed: 42
 
