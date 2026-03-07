@@ -20,3 +20,4 @@
 - `bashes/7_visualize_scene_graph_offscreen.sh`: 离线导出场景图可视化（images/ply/html）。
 - `bashes/7b_query_scene.sh`: 文本查询驱动关键帧选择主入口。
 - `bashes/run_e2e_query_test.sh`: query scene 端到端测试并输出日志。
+- `bashes/run_full_detect_pipeline_to_6b.sh`: 针对单个 scene 的 detect 全链路总控（清理旧产物，保留 `results/result + traj.txt`，串行执行 `1b→2b→4b→5b+→6b` 并做产物校验）。
