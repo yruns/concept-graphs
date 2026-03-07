@@ -41,9 +41,10 @@ fi
 cd "${ROOT_DIR}/conceptgraph"
 
 # 配置 LLM 客户端
-export LLM_MODEL="${LLM_MODEL:-gpt-5.2-2025-12-11}"
-# 视觉请求较大，降低并发以避免连接错误
-export NUM_WORKERS=3
+# 默认使用 Gemini + pool，提高并发吞吐（可通过环境变量覆盖）
+export LLM_MODEL="${LLM_MODEL:-gemini-2.5-pro}"
+export USE_GEMINI_POOL="${USE_GEMINI_POOL:-1}"
+export NUM_WORKERS="${NUM_WORKERS:-12}"
 
 # 场景设置
 SCENE_NAME=${1:-room0}
@@ -57,18 +58,23 @@ echo "================================================"
 echo "步骤 4B: 提取物体描述 (类别感知模式)"
 echo "================================================"
 echo "场景: ${SCENE_NAME}"
-echo "LLM 客户端: llm_client"
+echo "LLM 客户端: GeminiClientPool (USE_GEMINI_POOL=${USE_GEMINI_POOL})"
 echo "模型: ${LLM_MODEL}"
+echo "并发 workers: ${NUM_WORKERS}"
 echo ""
 echo "输入: ${REPLICA_ROOT}/${SCENE_NAME}/pcd_saves/${PKL_FILENAME}"
 echo "输出: ${CACHE_DIR}/cfslam_llava_captions.json"
 echo "================================================"
 echo ""
 
+if [[ "${USE_GEMINI_POOL,,}" =~ ^(1|true|yes|on)$ ]] && [[ "${LLM_MODEL}" != "gemini-2.5-pro" ]]; then
+    echo "⚠ 提示: GeminiClientPool 当前主要针对 gemini-2.5-pro 生效；当前模型为 ${LLM_MODEL}"
+fi
+
 # 创建缓存目录
 mkdir -p "${CACHE_DIR}"
 
-# LLM 客户端由 llm_client 统一管理
+# LLM 客户端由 llm_client 统一管理（Gemini 模型可走 pool）
 echo "✓ LLM 客户端已配置"
 echo ""
 

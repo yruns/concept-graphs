@@ -12,6 +12,23 @@ from langchain_core.messages import HumanMessage
 from conceptgraph.utils.llm_client import DEFAULT_MODEL, get_langchain_chat_model
 
 
+def _resolve_use_gemini_pool(model_name: str) -> bool:
+    """
+    Determine whether GeminiClientPool should be used.
+
+    Env `USE_GEMINI_POOL` supports:
+    - true values: 1/true/yes/on
+    - false values: 0/false/no/off
+    - auto/default: enabled only for gemini-2.5-pro
+    """
+    raw = os.getenv("USE_GEMINI_POOL", "auto").strip().lower()
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return model_name.lower() == "gemini-2.5-pro"
+
+
 class UnifiedVisionChat:
     """统一的视觉对话客户端"""
     
@@ -24,8 +41,13 @@ class UnifiedVisionChat:
             base_url: 保留参数,当前未使用
         """
         self.model_name = model_name or os.getenv("LLM_MODEL") or DEFAULT_MODEL
-        self._llm = get_langchain_chat_model(deployment_name=self.model_name)
-        print(f"统一视觉客户端初始化: {self.model_name} (llm_client)")
+        self.use_pool = _resolve_use_gemini_pool(self.model_name)
+        self._llm = get_langchain_chat_model(
+            deployment_name=self.model_name,
+            use_pool=self.use_pool,
+        )
+        backend = "GeminiClientPool" if self.use_pool else "llm_client"
+        print(f"统一视觉客户端初始化: {self.model_name} ({backend})")
     
     def reset(self):
         """重置对话状态(为了兼容LLaVA接口)"""
@@ -173,4 +195,3 @@ if __name__ == "__main__":
     response = chat(query=query, image=image)
     print(f"查询: {query}")
     print(f"响应: {response}")
-

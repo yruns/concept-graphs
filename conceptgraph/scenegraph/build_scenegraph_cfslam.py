@@ -8,6 +8,7 @@ import json
 import os
 import pickle as pkl
 import time
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,10 +22,10 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import numpy as np
-import rich
 import torch
 import tyro
 from PIL import Image
+from rich.console import Console
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components, minimum_spanning_tree
 from tqdm import tqdm, trange
@@ -41,6 +42,27 @@ from transformers import logging as hf_logging
 
 torch.autograd.set_grad_enabled(False)
 hf_logging.set_verbosity_error()
+
+
+_VISION_CHAT_TLS = threading.local()
+
+
+def _get_thread_local_vision_chat():
+    """
+    Reuse one vision chat client per worker thread to avoid repeated
+    initialization for every single detection.
+    """
+    model_name = os.getenv("LLM_MODEL")
+    cached_chat = getattr(_VISION_CHAT_TLS, "chat", None)
+    cached_model = getattr(_VISION_CHAT_TLS, "model_name", None)
+
+    if cached_chat is None or cached_model != model_name:
+        from conceptgraph.llava.vision_client import create_vision_chat
+        cached_chat = create_vision_chat(model_name=model_name)
+        _VISION_CHAT_TLS.chat = cached_chat
+        _VISION_CHAT_TLS.model_name = model_name
+
+    return cached_chat
 
 
 
@@ -259,9 +281,6 @@ def _process_single_detection(args_tuple):
     (obj, idx_det, masking_option, query, console) = args_tuple
     
     try:
-        # 导入必要的模块（每个worker需要独立导入）
-        from conceptgraph.llava.vision_client import create_vision_chat
-        
         # 读取图像
         image = Image.open(obj["color_path"][idx_det]).convert("RGB")
         xyxy = obj["xyxy"][idx_det]
@@ -296,8 +315,8 @@ def _process_single_detection(args_tuple):
                 'conf_value': conf_value
             }
         
-        # 创建客户端并处理（每个worker独立的客户端实例）
-        chat = create_vision_chat()
+        # 使用线程本地客户端（每个worker线程仅初始化一次）
+        chat = _get_thread_local_vision_chat()
         chat.reset()
         
         # 获取描述
@@ -324,10 +343,8 @@ def _process_single_detection(args_tuple):
 
 def extract_node_captions(args):
     # 使用统一的视觉客户端（并行处理版本）
-    from conceptgraph.llava.vision_client import create_vision_chat
     from conceptgraph.slam.slam_classes import MapObjectList
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    import threading
 
     # Load the scene map
     scene_map = MapObjectList()
@@ -339,7 +356,7 @@ def extract_node_captions(args):
     # 'text_ft', 'pcd_np', 'bbox_np', 'pcd_color_np'
 
     # rich console for pretty printing
-    console = rich.console.Console()
+    console = Console()
     
     # 并行处理配置
     NUM_WORKERS = int(os.getenv("NUM_WORKERS", 4))

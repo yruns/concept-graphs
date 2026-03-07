@@ -7,7 +7,7 @@
 - `bashes/2b_build_3d_object_map_detect.sh`: 类别感知结果融合为 3D 对象地图。
 - `bashes/3_visualize_object_map.sh`: 交互式可视化 3D 对象地图。
 - `bashes/4_extract_object_captions.sh`: 生成对象初始描述（`sg_cache`）。
-- `bashes/4b_extract_object_captions_detect.sh`: 类别感知版本对象描述（`sg_cache_detect`）。
+- `bashes/4b_extract_object_captions_detect.sh`: 类别感知版本对象描述（`sg_cache_detect`，默认 `gemini-2.5-pro + GeminiClientPool`，`NUM_WORKERS` 可配置并发）。
 - `bashes/5_refine_object_captions.sh`: 细化对象描述（`sg_cache`）。
 - `bashes/5b_refine_object_captions_detect.sh`: 细化对象描述（`sg_cache_detect`）。
 - `bashes/5b_refine_with_affordance.sh`: 细化描述并提取 affordance（图像+文本）。
