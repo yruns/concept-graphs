@@ -31,6 +31,16 @@ def _get_langchain_chat_model(*args, **kwargs):
     return get_langchain_chat_model(*args, **kwargs)
 
 
+def _get_gemini_pool():
+    from conceptgraph.utils.llm_client import GeminiClientPool
+    return GeminiClientPool.get_instance()
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    from conceptgraph.utils.llm_client import _is_rate_limit_error
+    return _is_rate_limit_error(error)
+
+
 # Supported spatial relations (for quick coordinate-based filtering)
 # Import from query_structures to ensure consistency
 try:
@@ -302,44 +312,64 @@ NOTE: "cushion" should expand to ALL cushion-like categories; "couch" maps to "s
 class QueryParser:
     """
     Natural language query parser using LLM structured output.
-    
+
     Converts queries like "the pillow on the sofa nearest the door" into
     structured GroundingQuery objects with nested spatial constraints.
-    
+
+    Supports:
+    - Single model mode: Uses a specific LLM model
+    - Pool mode: Uses Gemini client pool for concurrent requests
+
     Attributes:
         llm_model: Name of the LLM model to use
         scene_categories: List of object categories in the scene
+        use_pool: Whether to use Gemini client pool (for concurrent requests)
     """
-    
+
     def __init__(
         self,
         llm_model: str,
         scene_categories: List[str],
         temperature: float = 0.0,
+        use_pool: bool = False,
     ):
         """
         Initialize the query parser.
-        
+
         Args:
-            llm_model: LLM model name (e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
+            llm_model: LLM model name (e.g., "gemini-2.5-pro")
             scene_categories: List of object categories present in the scene
             temperature: LLM temperature (default 0.0 for deterministic output)
+            use_pool: If True, use Gemini pool for load-balanced concurrent requests
         """
         self.llm_model = llm_model
         self.scene_categories = scene_categories
         self.temperature = temperature
-        
+        self.use_pool = use_pool
+
         # Initialize LLM (structured schema is built per-parse)
         self._llm = None
-    
+
     def _get_llm(self):
         """Lazy initialization of base LLM."""
         if self._llm is None:
-            self._llm = _get_langchain_chat_model(
-                deployment_name=self.llm_model,
-                temperature=self.temperature,
-            )
+            if self.use_pool and "gemini" in self.llm_model.lower():
+                # Use pool's get_client_with_config for load balancing
+                pool = _get_gemini_pool()
+                self._llm = pool.get_client_with_config(temperature=self.temperature)
+            else:
+                self._llm = _get_langchain_chat_model(
+                    deployment_name=self.llm_model,
+                    temperature=self.temperature,
+                )
         return self._llm
+
+    def _get_fresh_llm(self):
+        """Get a fresh LLM instance (useful for pool to rotate clients)."""
+        if self.use_pool and "gemini" in self.llm_model.lower():
+            pool = _get_gemini_pool()
+            return pool.get_client_with_config(temperature=self.temperature)
+        return self._get_llm()
 
     def _build_dynamic_schema(self):
         """Build a dynamic schema with category enum + UNKNOW."""
@@ -413,9 +443,39 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
         
         return prompt
     
+    def _is_gemini_model(self) -> bool:
+        """Check if the current LLM model is a Gemini model."""
+        return "gemini" in self.llm_model.lower()
+
+    def _parse_json_response(self, response_text: str, query: str) -> GroundingQuery:
+        """Parse JSON response text to GroundingQuery."""
+        import json
+        import re
+
+        # Extract JSON from markdown code blocks if present
+        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", response_text)
+        if json_match:
+            json_str = json_match.group(1).strip()
+        else:
+            json_str = response_text.strip()
+
+        # Parse JSON
+        data = json.loads(json_str)
+
+        # Ensure raw_query is set
+        if not data.get("raw_query"):
+            data["raw_query"] = query
+
+        # Validate and convert
+        parsed = GroundingQuery.model_validate(data)
+        return parsed
+
     def parse(self, query: str) -> GroundingQuery:
         """
         Parse a natural language query into a GroundingQuery.
+
+        For Gemini models with pool enabled, automatically retries with different
+        API keys on rate limit errors.
 
         Args:
             query: Natural language query string
@@ -426,42 +486,119 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
         Raises:
             ValueError: If parsing fails after retries
         """
+        # For pool mode with Gemini, we handle rate limit retries at the key level
+        if self.use_pool and self._is_gemini_model():
+            return self._parse_with_pool_retry(query)
+
+        # Standard retry logic for non-pool mode
         max_retries = 2
         last_error = None
 
         for attempt in range(max_retries):
             try:
                 logger.info(f"[QueryParser] Parsing query: '{query}' (attempt {attempt + 1})")
-
-                prompt = self._build_prompt(query)
-                schema = self._build_dynamic_schema()
-                structured_llm = self._get_llm().with_structured_output(schema)
-
-                # Invoke LLM with structured output
-                result = structured_llm.invoke(prompt)
-
-                # Ensure raw_query is set
-                if not result.raw_query:
-                    result.raw_query = query
-
-                # Convert to standard GroundingQuery for downstream compatibility
-                parsed = GroundingQuery.model_validate(result.model_dump())
-
-                # Assign node IDs
-                self._assign_node_ids(parsed.root, "root")
+                parsed = self._do_parse(query)
 
                 logger.success(f"[QueryParser] Successfully parsed query")
-                logger.info(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
-
+                logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
                 return parsed
 
             except Exception as e:
                 last_error = e
                 logger.warning(f"[QueryParser] Attempt {attempt + 1} failed: {e}")
 
-        # All retries failed - raise error, no fallback
         logger.error(f"[QueryParser] All parsing attempts failed: {last_error}")
         raise ValueError(f"Failed to parse query '{query}' after {max_retries} attempts: {last_error}")
+
+    def _parse_with_pool_retry(self, query: str) -> GroundingQuery:
+        """
+        Parse with automatic retry across all pool keys on rate limit.
+
+        Tries each key in the pool until one succeeds or all are exhausted.
+        """
+        pool = _get_gemini_pool()
+        tried_indices = set()
+        last_error = None
+        max_keys = pool.pool_size
+
+        while len(tried_indices) < max_keys:
+            config_idx = pool.get_next_config_index()
+
+            if config_idx in tried_indices:
+                # Already tried this key, skip
+                continue
+
+            tried_indices.add(config_idx)
+            key_id = pool._get_key_id(config_idx)
+
+            try:
+                logger.info(f"[QueryParser] Parsing query: '{query}' (key {key_id})")
+
+                # Get client for this specific config
+                config = pool._configs[config_idx]
+                from langchain_openai import AzureChatOpenAI
+                llm = AzureChatOpenAI(
+                    azure_deployment=config["model_name"],
+                    model=config["model_name"],
+                    api_key=config["api_key"],
+                    azure_endpoint=config["endpoint"],
+                    api_version=config["api_version"],
+                    temperature=self.temperature,
+                    timeout=120,
+                    max_retries=0,  # We handle retries
+                )
+
+                parsed = self._do_parse_with_llm(query, llm)
+                pool._record_request(config_idx, rate_limited=False)
+
+                logger.success(f"[QueryParser] Successfully parsed query")
+                logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
+                return parsed
+
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    pool._record_request(config_idx, rate_limited=True)
+                    logger.warning(f"[QueryParser] Key {key_id} rate limited, trying next key...")
+                    last_error = e
+                    continue
+                else:
+                    pool._record_request(config_idx, rate_limited=False)
+                    # Non-rate-limit error, still try next key for resilience
+                    logger.warning(f"[QueryParser] Key {key_id} failed: {e}")
+                    last_error = e
+                    continue
+
+        logger.error(f"[QueryParser] All {max_keys} keys exhausted")
+        raise ValueError(f"Failed to parse query '{query}' - all keys exhausted: {last_error}")
+
+    def _do_parse(self, query: str) -> GroundingQuery:
+        """Core parsing logic with fresh LLM."""
+        llm = self._get_fresh_llm()
+        return self._do_parse_with_llm(query, llm)
+
+    def _do_parse_with_llm(self, query: str, llm) -> GroundingQuery:
+        """Core parsing logic with provided LLM."""
+        prompt = self._build_prompt(query)
+
+        # For Gemini models, use JSON mode (they don't support complex $ref schemas)
+        if self._is_gemini_model():
+            response = llm.invoke(prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            parsed = self._parse_json_response(content, query)
+        else:
+            # Use structured output for non-Gemini models
+            schema = self._build_dynamic_schema()
+            structured_llm = llm.with_structured_output(schema)
+            result = structured_llm.invoke(prompt)
+
+            if not result.raw_query:
+                result.raw_query = query
+
+            parsed = GroundingQuery.model_validate(result.model_dump())
+
+        # Assign node IDs
+        self._assign_node_ids(parsed.root, "root")
+        return parsed
 
     def _assign_node_ids(self, node: QueryNode, prefix: str) -> None:
         """Recursively assign unique IDs to query nodes."""
@@ -476,15 +613,55 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
 
     def parse_batch(self, queries: List[str]) -> List[GroundingQuery]:
         """
-        Parse multiple queries.
-        
+        Parse multiple queries (sequential).
+
         Args:
             queries: List of query strings
-            
+
         Returns:
             List of GroundingQuery objects
         """
         return [self.parse(q) for q in queries]
+
+    def parse_batch_parallel(
+        self,
+        queries: List[str],
+        max_workers: Optional[int] = None,
+    ) -> List[GroundingQuery]:
+        """
+        Parse multiple queries in parallel using Gemini pool.
+
+        Requires use_pool=True in constructor.
+
+        Args:
+            queries: List of query strings
+            max_workers: Max concurrent threads (default: pool size)
+
+        Returns:
+            List of GroundingQuery objects in same order as queries
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        if not self.use_pool:
+            logger.warning("parse_batch_parallel called without use_pool=True, falling back to sequential")
+            return self.parse_batch(queries)
+
+        pool = _get_gemini_pool()
+        if max_workers is None:
+            max_workers = min(len(queries), pool.pool_size)
+
+        results = [None] * len(queries)
+
+        def parse_single(idx: int, query: str):
+            return idx, self.parse(query)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(parse_single, i, q) for i, q in enumerate(queries)]
+            for future in as_completed(futures):
+                idx, result = future.result()
+                results[idx] = result
+
+        return results
 
 
 # Convenience function

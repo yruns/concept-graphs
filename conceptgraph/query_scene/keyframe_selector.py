@@ -215,19 +215,22 @@ class KeyframeSelector:
         affordance_file: Optional[Path] = None,
         stride: int = 5,
         llm_model: str = None,
+        use_pool: bool = False,
     ):
         """Initialize keyframe selector.
-        
+
         Args:
             scene_path: Root path of the scene
             pcd_file: Path to .pkl.gz file with 3D objects
             affordance_file: Path to object_affordances.json (optional)
             stride: Frame stride used during mapping
-            llm_model: LLM model name (required, e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
+            llm_model: LLM model name (e.g., "gemini-2.5-pro")
+            use_pool: If True, use Gemini pool for concurrent requests
         """
         self.scene_path = Path(scene_path)
         self.stride = stride
         self.llm_model = llm_model
+        self.use_pool = use_pool
         
         # Initialize LLM client (will be created on first use)
         self._llm_client = None
@@ -1139,7 +1142,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         return None
     
     # ========== Hypothesis-Based Query Support (V3) ==========
-    
+
     def _get_query_parser(self) -> QueryParser:
         """Get or create the query parser."""
         if self._query_parser is None:
@@ -1148,6 +1151,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             self._query_parser = QueryParser(
                 llm_model=self.llm_model,
                 scene_categories=self.scene_categories,
+                use_pool=self.use_pool,
             )
         return self._query_parser
     

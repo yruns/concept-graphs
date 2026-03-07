@@ -374,7 +374,8 @@ def run_e2e_test(
     if selector is None:
         selector = KeyframeSelector.from_scene_path(
             str(scene_path),
-            llm_model="gpt-5.2-2025-12-11"
+            llm_model="gemini-2.5-pro",
+            use_pool=True
         )
 
     # Parse query using hypothesis-based parsing
@@ -677,7 +678,8 @@ def main():
     from conceptgraph.query_scene.keyframe_selector import KeyframeSelector
     selector = KeyframeSelector.from_scene_path(
         str(scene_path),
-        llm_model="gpt-5.2-2025-12-11"
+        llm_model="gemini-2.5-pro",
+        use_pool=True  # Enable pool for concurrent parsing
     )
 
     all_results = []
