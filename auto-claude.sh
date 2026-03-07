@@ -104,7 +104,7 @@ PROMPT_EOF
 $(cat TODO.md)"
 
     # Execute Claude Code via ttadk with prompt piped through stdin
-    echo "$PROMPT" | ttadk code --model claude-opus-4-5 -a "--dangerously-skip-permissions --print" 2>&1 | tee -a "$LOG_FILE"
+    echo "$PROMPT" | ttadk code --model claude-opus-4-5 -a "--dangerously-skip-permissions --print --output-format stream-json" 2>&1 | tee -a "$LOG_FILE"
     exit_code=${PIPESTATUS[1]}
 
     # Check Claude exit status

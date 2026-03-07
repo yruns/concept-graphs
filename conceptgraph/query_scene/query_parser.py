@@ -73,6 +73,7 @@ IMPORTANT RULES:
    - Query "a pillow" with scene [door, pillow, throw_pillow, sofa] → categories: ["pillow", "throw_pillow"]
    - Query "the lamp" with scene [floor_lamp, table_lamp, sofa] → categories: ["floor_lamp", "table_lamp"]
    - Query "a table" with scene [side_table, coffee_table, chair] → categories: ["side_table", "coffee_table"]
+   - Query "a cushion" with scene [sofa_seat_cushion, pillow, throw_pillow] → categories: ["sofa_seat_cushion", "pillow", "throw_pillow"]
 2. Every category in the list MUST be chosen from SCENE CATEGORIES exactly (case-sensitive, keep underscores).
 3. If no suitable category exists in SCENE CATEGORIES, output ["UNKNOW"] (a list with single element).
 4. ANCHOR CATEGORIES (CRITICAL): This rule applies to ALL QueryNode objects, including:
@@ -274,6 +275,24 @@ NOTE: "desk" is NOT in scene categories, so reference must use ["UNKNOW"]
       "reference": {"categories": ["UNKNOW"], "attributes": [], "spatial_constraints": [], "select_constraint": null},
       "position": null
     }
+  },
+  "expect_unique": true
+}
+
+Query: "the cushion on the couch" (scene has: sofa, sofa_seat_cushion, pillow, throw_pillow, door)
+NOTE: "cushion" should expand to ALL cushion-like categories; "couch" maps to "sofa"
+{
+  "raw_query": "the cushion on the couch",
+  "root": {
+    "categories": ["sofa_seat_cushion", "pillow", "throw_pillow"],
+    "attributes": [],
+    "spatial_constraints": [
+      {
+        "relation": "on",
+        "anchors": [{"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+      }
+    ],
+    "select_constraint": null
   },
   "expect_unique": true
 }
