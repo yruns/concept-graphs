@@ -4,14 +4,16 @@
 - 本仓库的长期背景知识存放在 `memory/`。
 - 每次新对话/新任务开始时，必须先按顺序读取：
 1. `memory/project_context.md`
-2. `memory/query_scene_knowledge.md`
-3. `memory/bash_scripts_index.md`
+2. `memory/room0_artifact_lineage.md`
+3. `memory/query_scene_knowledge.md`
+4. `memory/bash_scripts_index.md`
 - 这些文件用于快速拉取项目背景；若与当前源码冲突，以源码为准。
 - 当你修改了 query scene 行为或 pipeline 脚本后，必须同步更新对应 `memory/*.md`。
 
 ## Memory References
 - 索引入口：`memory/README.md`
 - 项目背景：`memory/project_context.md`
+- `room0` 产物溯源：`memory/room0_artifact_lineage.md`
 - Query Scene 知识：`memory/query_scene_knowledge.md`
 - Bash 脚本索引：`memory/bash_scripts_index.md`
 

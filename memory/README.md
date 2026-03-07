@@ -4,8 +4,9 @@
 
 ## 加载顺序（建议）
 1. `memory/project_context.md`
-2. `memory/query_scene_knowledge.md`
-3. `memory/bash_scripts_index.md`
+2. `memory/room0_artifact_lineage.md`
+3. `memory/query_scene_knowledge.md`
+4. `memory/bash_scripts_index.md`
 
 ## 使用规则
 - 这些文件是“背景知识”，不是最终真相。
