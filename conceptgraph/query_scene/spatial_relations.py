@@ -471,10 +471,11 @@ class SpatialRelationChecker:
         """
         t_pos = self._get_centroid(target)
         a_bbox = self._get_bbox(anchor)
-        
+
         if a_bbox is None:
-            # Fall back to proximity check
-            return self.is_near(target, anchor)
+            # Cannot determine containment without bounding box
+            # Do NOT fall back to proximity - "inside" requires bbox data
+            return RelationResult(satisfies=False, score=0.0)
         
         a_min, a_max = a_bbox
         margin = self.thresholds["inside"]["margin"]

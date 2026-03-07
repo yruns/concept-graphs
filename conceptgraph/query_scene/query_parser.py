@@ -31,6 +31,16 @@ def _get_langchain_chat_model(*args, **kwargs):
     return get_langchain_chat_model(*args, **kwargs)
 
 
+def _get_gemini_pool():
+    from conceptgraph.utils.llm_client import GeminiClientPool
+    return GeminiClientPool.get_instance()
+
+
+def _is_rate_limit_error(error: Exception) -> bool:
+    from conceptgraph.utils.llm_client import _is_rate_limit_error
+    return _is_rate_limit_error(error)
+
+
 # Supported spatial relations (for quick coordinate-based filtering)
 # Import from query_structures to ensure consistency
 try:
@@ -68,22 +78,30 @@ SelectConstraint structure (for superlative/ordinal):
 - position: Integer for ordinal (1=first, 2=second, etc.)
 
 IMPORTANT RULES:
-1. SEMANTIC EXPANSION (CRITICAL): The `categories` field is a LIST. When the user mentions a general term (e.g., "pillow", "lamp", "table"), 
+1. SEMANTIC EXPANSION (CRITICAL): The `categories` field is a LIST. When the user mentions a general term (e.g., "pillow", "lamp", "table"),
    include ALL semantically related categories from SCENE CATEGORIES. Examples:
    - Query "a pillow" with scene [door, pillow, throw_pillow, sofa] → categories: ["pillow", "throw_pillow"]
-   - Query "the lamp" with scene [floor_lamp, table_lamp, sofa] → categories: ["floor_lamp", "table_lamp"]  
+   - Query "the lamp" with scene [floor_lamp, table_lamp, sofa] → categories: ["floor_lamp", "table_lamp"]
    - Query "a table" with scene [side_table, coffee_table, chair] → categories: ["side_table", "coffee_table"]
+   - Query "a cushion" with scene [sofa_seat_cushion, pillow, throw_pillow] → categories: ["sofa_seat_cushion", "pillow", "throw_pillow"]
 2. Every category in the list MUST be chosen from SCENE CATEGORIES exactly (case-sensitive, keep underscores).
 3. If no suitable category exists in SCENE CATEGORIES, output ["UNKNOW"] (a list with single element).
-4. Before returning, verify every category string is present in SCENE CATEGORIES or is exactly "UNKNOW".
-5. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
-6. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
-7. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
-8. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
-9. Spatial constraints are filters (AND logic), select_constraint is for final selection
-10. Keep structure flat when possible - don't over-nest
-11. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is
-12. The `categories` list must have at least one element. Include exact matches first, then semantically related categories."""
+4. ANCHOR CATEGORIES (CRITICAL): This rule applies to ALL QueryNode objects, including:
+   - The root target node
+   - Anchor nodes in spatial_constraints
+   - Reference nodes in select_constraint
+   If an anchor/reference category is not in SCENE CATEGORIES, set its categories to ["UNKNOW"].
+   Example: Query "pillow on bed" with scene [pillow, sofa, door] (no bed) →
+   anchor categories: ["UNKNOW"] (bed not in scene)
+5. Before returning, verify EVERY category string in ALL nodes is present in SCENE CATEGORIES or is exactly "UNKNOW".
+6. Map common relation synonyms to predefined values: "on top of"→"on", "under"/"beneath"→"below", "close to"→"near"
+7. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
+8. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
+9. "first/second/third from left" uses SelectConstraint with constraint_type="ordinal", metric="x_position"
+10. Spatial constraints are filters (AND logic), select_constraint is for final selection
+11. Keep structure flat when possible - don't over-nest
+12. Prefer predefined relations, but if the query uses uncommon spatial words (e.g., "hanging from", "leaning against"), keep them as-is
+13. The `categories` list must have at least one element. Include exact matches first, then semantically related categories."""
 
 
 def get_few_shot_examples() -> str:
@@ -233,50 +251,125 @@ Query: "the second chair from the left" (scene has: chair, armchair, table)
   },
   "expect_unique": true
 }
+
+Query: "the pillow on the bed" (scene has: pillow, throw_pillow, sofa, door - NO bed)
+NOTE: "bed" is NOT in scene categories, so anchor must use ["UNKNOW"]
+{
+  "raw_query": "the pillow on the bed",
+  "root": {
+    "categories": ["pillow", "throw_pillow"],
+    "attributes": [],
+    "spatial_constraints": [
+      {
+        "relation": "on",
+        "anchors": [{"categories": ["UNKNOW"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+      }
+    ],
+    "select_constraint": null
+  },
+  "expect_unique": true
+}
+
+Query: "the lamp nearest the desk" (scene has: floor_lamp, sofa, door - NO desk)
+NOTE: "desk" is NOT in scene categories, so reference must use ["UNKNOW"]
+{
+  "raw_query": "the lamp nearest the desk",
+  "root": {
+    "categories": ["floor_lamp"],
+    "attributes": [],
+    "spatial_constraints": [],
+    "select_constraint": {
+      "constraint_type": "superlative",
+      "metric": "distance",
+      "order": "min",
+      "reference": {"categories": ["UNKNOW"], "attributes": [], "spatial_constraints": [], "select_constraint": null},
+      "position": null
+    }
+  },
+  "expect_unique": true
+}
+
+Query: "the cushion on the couch" (scene has: sofa, sofa_seat_cushion, pillow, throw_pillow, door)
+NOTE: "cushion" should expand to ALL cushion-like categories; "couch" maps to "sofa"
+{
+  "raw_query": "the cushion on the couch",
+  "root": {
+    "categories": ["sofa_seat_cushion", "pillow", "throw_pillow"],
+    "attributes": [],
+    "spatial_constraints": [
+      {
+        "relation": "on",
+        "anchors": [{"categories": ["sofa"], "attributes": [], "spatial_constraints": [], "select_constraint": null}]
+      }
+    ],
+    "select_constraint": null
+  },
+  "expect_unique": true
+}
 '''
 
 
 class QueryParser:
     """
     Natural language query parser using LLM structured output.
-    
+
     Converts queries like "the pillow on the sofa nearest the door" into
     structured GroundingQuery objects with nested spatial constraints.
-    
+
+    Supports:
+    - Single model mode: Uses a specific LLM model
+    - Pool mode: Uses Gemini client pool for concurrent requests
+
     Attributes:
         llm_model: Name of the LLM model to use
         scene_categories: List of object categories in the scene
+        use_pool: Whether to use Gemini client pool (for concurrent requests)
     """
-    
+
     def __init__(
         self,
         llm_model: str,
         scene_categories: List[str],
         temperature: float = 0.0,
+        use_pool: bool = False,
     ):
         """
         Initialize the query parser.
-        
+
         Args:
-            llm_model: LLM model name (e.g., "gpt-5.2-2025-12-11", "gemini-2.5-pro")
+            llm_model: LLM model name (e.g., "gemini-2.5-pro")
             scene_categories: List of object categories present in the scene
             temperature: LLM temperature (default 0.0 for deterministic output)
+            use_pool: If True, use Gemini pool for load-balanced concurrent requests
         """
         self.llm_model = llm_model
         self.scene_categories = scene_categories
         self.temperature = temperature
-        
+        self.use_pool = use_pool
+
         # Initialize LLM (structured schema is built per-parse)
         self._llm = None
-    
+
     def _get_llm(self):
         """Lazy initialization of base LLM."""
         if self._llm is None:
-            self._llm = _get_langchain_chat_model(
-                deployment_name=self.llm_model,
-                temperature=self.temperature,
-            )
+            if self.use_pool and "gemini" in self.llm_model.lower():
+                # Use pool's get_client_with_config for load balancing
+                pool = _get_gemini_pool()
+                self._llm = pool.get_client_with_config(temperature=self.temperature)
+            else:
+                self._llm = _get_langchain_chat_model(
+                    deployment_name=self.llm_model,
+                    temperature=self.temperature,
+                )
         return self._llm
+
+    def _get_fresh_llm(self):
+        """Get a fresh LLM instance (useful for pool to rotate clients)."""
+        if self.use_pool and "gemini" in self.llm_model.lower():
+            pool = _get_gemini_pool()
+            return pool.get_client_with_config(temperature=self.temperature)
+        return self._get_llm()
 
     def _build_dynamic_schema(self):
         """Build a dynamic schema with category enum + UNKNOW."""
@@ -350,367 +443,246 @@ Return ONLY the JSON object matching the GroundingQuery schema."""
         
         return prompt
     
+    def _is_gemini_model(self) -> bool:
+        """Check if the current LLM model is a Gemini model."""
+        return "gemini" in self.llm_model.lower()
+
+    def _parse_json_response(self, response_text: str, query: str) -> GroundingQuery:
+        """Parse JSON response text to GroundingQuery."""
+        import json
+        import re
+
+        # Extract JSON from markdown code blocks if present
+        json_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", response_text)
+        if json_match:
+            json_str = json_match.group(1).strip()
+        else:
+            json_str = response_text.strip()
+
+        # Parse JSON
+        data = json.loads(json_str)
+
+        # Ensure raw_query is set
+        if not data.get("raw_query"):
+            data["raw_query"] = query
+
+        # Validate and convert
+        parsed = GroundingQuery.model_validate(data)
+        return parsed
+
     def parse(self, query: str) -> GroundingQuery:
         """
         Parse a natural language query into a GroundingQuery.
-        
+
+        For Gemini models with pool enabled, automatically retries with different
+        API keys on rate limit errors.
+
         Args:
             query: Natural language query string
-            
+
         Returns:
             GroundingQuery object with parsed structure
-            
+
         Raises:
             ValueError: If parsing fails after retries
         """
+        # For pool mode with Gemini, we handle rate limit retries at the key level
+        if self.use_pool and self._is_gemini_model():
+            return self._parse_with_pool_retry(query)
+
+        # Standard retry logic for non-pool mode
         max_retries = 2
         last_error = None
-        
+
         for attempt in range(max_retries):
             try:
                 logger.info(f"[QueryParser] Parsing query: '{query}' (attempt {attempt + 1})")
-                
-                prompt = self._build_prompt(query)
-                schema = self._build_dynamic_schema()
-                structured_llm = self._get_llm().with_structured_output(schema)
-                
-                # Invoke LLM with structured output
-                result = structured_llm.invoke(prompt)
-                
-                # Ensure raw_query is set
-                if not result.raw_query:
-                    result.raw_query = query
+                parsed = self._do_parse(query)
 
-                # Convert to standard GroundingQuery for downstream compatibility
-                parsed = GroundingQuery.model_validate(result.model_dump())
-
-                # Assign node IDs
-                self._assign_node_ids(parsed.root, "root")
-                
                 logger.success(f"[QueryParser] Successfully parsed query")
-                logger.info(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
-
+                logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
                 return parsed
-                
+
             except Exception as e:
                 last_error = e
                 logger.warning(f"[QueryParser] Attempt {attempt + 1} failed: {e}")
-        
-        # All retries failed - return a simple fallback
+
         logger.error(f"[QueryParser] All parsing attempts failed: {last_error}")
-        return self._fallback_parse(query)
-    
+        raise ValueError(f"Failed to parse query '{query}' after {max_retries} attempts: {last_error}")
+
+    def _parse_with_pool_retry(self, query: str) -> GroundingQuery:
+        """
+        Parse with automatic retry across all pool keys on rate limit.
+
+        Tries each key in the pool until one succeeds or all are exhausted.
+        """
+        pool = _get_gemini_pool()
+        tried_indices = set()
+        last_error = None
+        max_keys = pool.pool_size
+
+        while len(tried_indices) < max_keys:
+            config_idx = pool.get_next_config_index()
+
+            if config_idx in tried_indices:
+                # Already tried this key, skip
+                continue
+
+            tried_indices.add(config_idx)
+            key_id = pool._get_key_id(config_idx)
+
+            try:
+                logger.info(f"[QueryParser] Parsing query: '{query}' (key {key_id})")
+
+                # Get client for this specific config
+                config = pool._configs[config_idx]
+                from langchain_openai import AzureChatOpenAI
+                llm = AzureChatOpenAI(
+                    azure_deployment=config["model_name"],
+                    model=config["model_name"],
+                    api_key=config["api_key"],
+                    azure_endpoint=config["endpoint"],
+                    api_version=config["api_version"],
+                    temperature=self.temperature,
+                    timeout=120,
+                    max_retries=0,  # We handle retries
+                )
+
+                parsed = self._do_parse_with_llm(query, llm)
+                pool._record_request(config_idx, rate_limited=False)
+
+                logger.success(f"[QueryParser] Successfully parsed query")
+                logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
+                return parsed
+
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    pool._record_request(config_idx, rate_limited=True)
+                    logger.warning(f"[QueryParser] Key {key_id} rate limited, trying next key...")
+                    last_error = e
+                    continue
+                else:
+                    pool._record_request(config_idx, rate_limited=False)
+                    # Non-rate-limit error, still try next key for resilience
+                    logger.warning(f"[QueryParser] Key {key_id} failed: {e}")
+                    last_error = e
+                    continue
+
+        logger.error(f"[QueryParser] All {max_keys} keys exhausted")
+        raise ValueError(f"Failed to parse query '{query}' - all keys exhausted: {last_error}")
+
+    def _do_parse(self, query: str) -> GroundingQuery:
+        """Core parsing logic with fresh LLM."""
+        llm = self._get_fresh_llm()
+        return self._do_parse_with_llm(query, llm)
+
+    def _do_parse_with_llm(self, query: str, llm) -> GroundingQuery:
+        """Core parsing logic with provided LLM."""
+        prompt = self._build_prompt(query)
+
+        # For Gemini models, use JSON mode (they don't support complex $ref schemas)
+        if self._is_gemini_model():
+            response = llm.invoke(prompt)
+            content = response.content if hasattr(response, "content") else str(response)
+            parsed = self._parse_json_response(content, query)
+        else:
+            # Use structured output for non-Gemini models
+            schema = self._build_dynamic_schema()
+            structured_llm = llm.with_structured_output(schema)
+            result = structured_llm.invoke(prompt)
+
+            if not result.raw_query:
+                result.raw_query = query
+
+            parsed = GroundingQuery.model_validate(result.model_dump())
+
+        # Assign node IDs
+        self._assign_node_ids(parsed.root, "root")
+        return parsed
+
     def _assign_node_ids(self, node: QueryNode, prefix: str) -> None:
         """Recursively assign unique IDs to query nodes."""
         node.node_id = prefix
-        
+
         for i, constraint in enumerate(node.spatial_constraints):
             for j, anchor in enumerate(constraint.anchors):
                 self._assign_node_ids(anchor, f"{prefix}_sc{i}_a{j}")
-        
+
         if node.select_constraint and node.select_constraint.reference:
             self._assign_node_ids(node.select_constraint.reference, f"{prefix}_sel_ref")
-    
-    def _fallback_parse(self, query: str) -> GroundingQuery:
-        """
-        Fallback parsing when LLM fails.
-        
-        Uses SimpleQueryParser for rule-based parsing.
-        """
-        simple_parser = SimpleQueryParser(scene_categories=self.scene_categories)
-        result = simple_parser.parse(query)
-        
-        # Assign node IDs
-        self._assign_node_ids(result.root, "root")
-        
-        return result
-    
+
     def parse_batch(self, queries: List[str]) -> List[GroundingQuery]:
         """
-        Parse multiple queries.
-        
+        Parse multiple queries (sequential).
+
         Args:
             queries: List of query strings
-            
+
         Returns:
             List of GroundingQuery objects
         """
         return [self.parse(q) for q in queries]
 
+    def parse_batch_parallel(
+        self,
+        queries: List[str],
+        max_workers: Optional[int] = None,
+    ) -> List[GroundingQuery]:
+        """
+        Parse multiple queries in parallel using Gemini pool.
 
-class SimpleQueryParser:
-    """
-    Simple rule-based query parser for basic queries.
-    
-    Falls back to this when LLM is not available or for simple queries.
-    Supports basic nesting but not as sophisticated as LLM parser.
-    """
-    
-    SPATIAL_KEYWORDS = ["on", "near", "beside", "above", "below", "in", "behind", "in_front_of", "next_to"]
-    SUPERLATIVE_KEYWORDS = {
-        "nearest": ("distance", "min"),
-        "closest": ("distance", "min"),
-        "farthest": ("distance", "max"),
-        "largest": ("size", "max"),
-        "biggest": ("size", "max"),
-        "smallest": ("size", "min"),
-        "highest": ("height", "max"),
-        "lowest": ("height", "min"),
-    }
-    ORDINAL_KEYWORDS = {
-        "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5,
-        "1st": 1, "2nd": 2, "3rd": 3, "4th": 4, "5th": 5,
-    }
-    
-    def __init__(self, scene_categories: Optional[List[str]] = None):
-        self.scene_categories = scene_categories or []
-    
-    def parse(self, query: str) -> GroundingQuery:
-        """Parse a simple query using rules."""
-        query_lower = query.lower().strip()
-        expect_unique = query_lower.startswith("the ")
-        
-        # Remove articles (use word boundaries to avoid removing 'a' from 'sofa')
-        import re
-        clean = re.sub(r'\bthe\b\s*', '', query_lower)
-        clean = re.sub(r'\ba\b\s*', '', clean)
-        clean = re.sub(r'\ban\b\s*', '', clean)
-        words = clean.split()
-        
-        # Check for "between X and Y"
-        if " between " in clean and " and " in clean:
-            return self._parse_between(query, clean, expect_unique)
-        
-        # Check for ordinal (e.g., "second chair from the left")
-        for ordinal, position in self.ORDINAL_KEYWORDS.items():
-            if ordinal in words:
-                return self._parse_ordinal(query, clean, ordinal, position, expect_unique)
-        
-        # Check for superlative + spatial (e.g., "largest book on the shelf")
-        for keyword, (metric, order) in self.SUPERLATIVE_KEYWORDS.items():
-            if keyword in clean:
-                return self._parse_superlative(query, clean, keyword, metric, order, expect_unique)
-        
-        # Check for spatial relation
-        for rel in self.SPATIAL_KEYWORDS:
-            if f" {rel} " in clean:
-                return self._parse_spatial(query, clean, rel, expect_unique)
-        
-        # Simple single object query
-        category = words[-1] if words else "object"
-        attributes = words[:-1] if len(words) > 1 else []
-        
-        return GroundingQuery(
-            raw_query=query,
-            root=QueryNode(
-                categories=[category],
-                attributes=attributes
-            ),
-            expect_unique=expect_unique
-        )
-    
-    def _parse_between(self, query: str, clean: str, expect_unique: bool) -> GroundingQuery:
-        """Parse 'X between Y and Z' pattern."""
-        import re
-        match = re.search(r'(\w+)\s+between\s+(\w+)\s+and\s+(\w+)', clean)
-        if match:
-            target = match.group(1)
-            anchor1 = match.group(2)
-            anchor2 = match.group(3)
-            
-            return GroundingQuery(
-                raw_query=query,
-                root=QueryNode(
-                    categories=[target],
-                    spatial_constraints=[
-                        SpatialConstraint(
-                            relation="between",
-                            anchors=[
-                                QueryNode(categories=[anchor1]),
-                                QueryNode(categories=[anchor2]),
-                            ]
-                        )
-                    ]
-                ),
-                expect_unique=expect_unique
-            )
-        
-        # Fallback
-        return GroundingQuery(
-            raw_query=query,
-            root=QueryNode(categories=[clean.split()[0]]),
-            expect_unique=expect_unique
-        )
-    
-    def _parse_ordinal(
-        self, query: str, clean: str, ordinal: str, position: int, expect_unique: bool
-    ) -> GroundingQuery:
-        """Parse ordinal patterns like 'second chair from the left'."""
-        words = clean.split()
-        ordinal_idx = words.index(ordinal)
-        
-        # Get target (word after ordinal)
-        target = words[ordinal_idx + 1] if ordinal_idx + 1 < len(words) else "object"
-        
-        # Determine ordering axis
-        if "left" in clean or "right" in clean:
-            metric = "x_position"
-            order = "asc" if "left" in clean else "desc"
-        elif "top" in clean or "bottom" in clean:
-            metric = "height"
-            order = "desc" if "top" in clean else "asc"
-        else:
-            metric = "x_position"
-            order = "asc"
-        
-        return GroundingQuery(
-            raw_query=query,
-            root=QueryNode(
-                categories=[target],
-                select_constraint=SelectConstraint(
-                    constraint_type=ConstraintType.ORDINAL,
-                    metric=metric,
-                    order=order,
-                    position=position,
-                )
-            ),
-            expect_unique=expect_unique
-        )
-    
-    def _parse_superlative(
-        self, query: str, clean: str, keyword: str, metric: str, order: str, expect_unique: bool
-    ) -> GroundingQuery:
-        """Parse superlative patterns like 'largest book on shelf' or 'sofa nearest door'."""
-        # Split by the superlative keyword
-        parts = clean.split(keyword, 1)
-        before = parts[0].strip()
-        after = parts[1].strip() if len(parts) > 1 else ""
-        
-        # Determine target and reference
-        if metric == "distance":
-            # Pattern: "X nearest Y" -> target=X, reference=Y
-            target = before.split()[-1] if before else after.split()[0]
-            ref_words = after.split()
-            reference = QueryNode(categories=[ref_words[-1]]) if ref_words else None
-            
-            # Check for spatial constraint in between
-            spatial_constraint = None
-            for rel in self.SPATIAL_KEYWORDS:
-                if f" {rel} " in after:
-                    rel_parts = after.split(f" {rel} ", 1)
-                    if len(rel_parts) == 2:
-                        anchor = rel_parts[1].split()[0]
-                        spatial_constraint = SpatialConstraint(
-                            relation=rel,
-                            anchors=[QueryNode(categories=[anchor])]
-                        )
-                        break
-            
-            return GroundingQuery(
-                raw_query=query,
-                root=QueryNode(
-                    categories=[target],
-                    spatial_constraints=[spatial_constraint] if spatial_constraint else [],
-                    select_constraint=SelectConstraint(
-                        constraint_type=ConstraintType.SUPERLATIVE,
-                        metric=metric,
-                        order=order,
-                        reference=reference,
-                    )
-                ),
-                expect_unique=expect_unique
-            )
-        else:
-            # Pattern: "largest X on Y" -> target=X, spatial=on Y, select=largest
-            target = after.split()[0] if after else "object"
-            
-            # Check for spatial constraint
-            spatial_constraint = None
-            remaining = " ".join(after.split()[1:]) if after else ""
-            for rel in self.SPATIAL_KEYWORDS:
-                if f" {rel} " in remaining or remaining.startswith(f"{rel} "):
-                    if remaining.startswith(f"{rel} "):
-                        anchor = remaining.split()[1] if len(remaining.split()) > 1 else ""
-                    else:
-                        rel_parts = remaining.split(f" {rel} ", 1)
-                        anchor = rel_parts[1].split()[0] if len(rel_parts) > 1 else ""
-                    if anchor:
-                        spatial_constraint = SpatialConstraint(
-                            relation=rel,
-                            anchors=[QueryNode(categories=[anchor])]
-                        )
-                    break
-            
-            return GroundingQuery(
-                raw_query=query,
-                root=QueryNode(
-                    categories=[target],
-                    spatial_constraints=[spatial_constraint] if spatial_constraint else [],
-                    select_constraint=SelectConstraint(
-                        constraint_type=ConstraintType.SUPERLATIVE,
-                        metric=metric,
-                        order=order,
-                    )
-                ),
-                expect_unique=expect_unique
-            )
-    
-    def _parse_spatial(self, query: str, clean: str, rel: str, expect_unique: bool) -> GroundingQuery:
-        """Parse simple spatial patterns like 'pillow on sofa'."""
-        parts = clean.split(f" {rel} ", 1)
-        if len(parts) == 2:
-            target_words = parts[0].strip().split()
-            target = target_words[-1] if target_words else "object"
-            attributes = target_words[:-1] if len(target_words) > 1 else []
-            
-            anchor_words = parts[1].strip().split()
-            anchor = anchor_words[0] if anchor_words else "object"
-            
-            return GroundingQuery(
-                raw_query=query,
-                root=QueryNode(
-                    categories=[target],
-                    attributes=attributes,
-                    spatial_constraints=[
-                        SpatialConstraint(
-                            relation=rel,
-                            anchors=[QueryNode(categories=[anchor])]
-                        )
-                    ]
-                ),
-                expect_unique=True
-            )
-        
-        # Fallback
-        return GroundingQuery(
-            raw_query=query,
-            root=QueryNode(categories=[clean.split()[0] if clean else "object"]),
-            expect_unique=True
-        )
+        Requires use_pool=True in constructor.
+
+        Args:
+            queries: List of query strings
+            max_workers: Max concurrent threads (default: pool size)
+
+        Returns:
+            List of GroundingQuery objects in same order as queries
+        """
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        if not self.use_pool:
+            logger.warning("parse_batch_parallel called without use_pool=True, falling back to sequential")
+            return self.parse_batch(queries)
+
+        pool = _get_gemini_pool()
+        if max_workers is None:
+            max_workers = min(len(queries), pool.pool_size)
+
+        results = [None] * len(queries)
+
+        def parse_single(idx: int, query: str):
+            return idx, self.parse(query)
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(parse_single, i, q) for i, q in enumerate(queries)]
+            for future in as_completed(futures):
+                idx, result = future.result()
+                results[idx] = result
+
+        return results
 
 
 # Convenience function
 def parse_query(
     query: str,
     scene_categories: List[str],
-    llm_model: Optional[str] = None,
-    use_simple: bool = False,
+    llm_model: str,
 ) -> GroundingQuery:
     """
     Parse a natural language query.
-    
+
     Args:
         query: Query string
         scene_categories: List of object categories in the scene
-        llm_model: LLM model name (required if not using simple parser)
-        use_simple: Use simple rule-based parser instead of LLM
-        
+        llm_model: LLM model name (required)
+
     Returns:
         GroundingQuery object
+
+    Raises:
+        ValueError: If parsing fails
     """
-    if use_simple or llm_model is None:
-        parser = SimpleQueryParser(scene_categories)
-    else:
-        parser = QueryParser(llm_model, scene_categories)
-    
+    parser = QueryParser(llm_model, scene_categories)
     return parser.parse(query)

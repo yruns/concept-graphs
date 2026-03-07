@@ -27,6 +27,18 @@
   - `bash bashes/6b_build_visibility_index.sh room0`
   - `bash bashes/7b_query_scene.sh room0 "pillow on the sofa" 3`
 
+## Python Environment (Required)
+- **检测系统**：先执行 `uname -s` 判断当前 OS
+- **macOS (Darwin)**：使用项目根目录的 `.venv`
+  ```bash
+  .venv/bin/python -m conceptgraph.query_scene.examples.e2e_query_test
+  ```
+- **Linux**：使用 conda 环境 `conceptgraph`
+  ```bash
+  source ~/miniconda3/etc/profile.d/conda.sh && conda activate conceptgraph
+  python -m conceptgraph.query_scene.examples.e2e_query_test
+  ```
+
 ## Working Conventions
 - Python 4 空格缩进，命名采用 `snake_case` / `PascalCase`。
 - 运行配置统一走 `env_vars.bash`，避免硬编码路径。

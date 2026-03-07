@@ -52,7 +52,7 @@ from .query_structures import (
     spatial_query,
     superlative_query,
 )
-from .query_parser import QueryParser, SimpleQueryParser, parse_query
+from .query_parser import QueryParser, parse_query
 from .query_executor import QueryExecutor, ExecutionResult, execute_query
 from .spatial_relations import (
     SpatialRelationChecker,
@@ -125,7 +125,6 @@ __all__ = [
     "superlative_query",
     # Query parser
     "QueryParser",
-    "SimpleQueryParser",
     "parse_query",
     # Query executor
     "QueryExecutor",

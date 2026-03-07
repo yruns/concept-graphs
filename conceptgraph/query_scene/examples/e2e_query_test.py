@@ -337,58 +337,131 @@ def run_e2e_test(
     scene_categories: List[str],
     scene_path: Path,
     output_base_dir: Path,
-    test_name: str
+    test_name: str,
+    selector=None,
 ) -> Dict[str, Any]:
-    """Run end-to-end test with step-by-step visualization."""
-    from conceptgraph.query_scene.query_parser import QueryParser
-    
+    """Run end-to-end test with step-by-step visualization.
+
+    Uses KeyframeSelector.parse_query_hypotheses() and execute_hypotheses()
+    for proper hypothesis-based execution with proxy anchor support.
+    """
+    from conceptgraph.query_scene.keyframe_selector import KeyframeSelector
+    from conceptgraph.query_scene.query_executor import QueryExecutor
+    from conceptgraph.query_scene.spatial_relations import SpatialRelationChecker
+
     logger.info("=" * 70)
     logger.info(f"Test: {test_name}")
     logger.info(f"Query: \"{query}\"")
     logger.info("=" * 70)
-    
+
     # Create query-specific output directory
     safe_name = query.replace(" ", "_").replace("\"", "").replace("'", "")[:50]
     output_dir = output_base_dir / safe_name
-    
+
     result = {
         "query": query,
         "test_name": test_name,
         "output_dir": str(output_dir),
         "parse_success": False,
         "execute_success": False,
+        "execution_status": "",
+        "hypothesis_kind": "",
         "matched_objects": [],
         "steps": [],
     }
-    
-    # Parse query
-    logger.info("[Step 1] Parsing query...")
-    try:
-        parser = QueryParser(
-            llm_model="gpt-5.2-2025-12-11",
-            scene_categories=scene_categories
+
+    # Use provided selector or create one
+    if selector is None:
+        selector = KeyframeSelector.from_scene_path(
+            str(scene_path),
+            llm_model="gemini-2.5-pro",
+            use_pool=True
         )
-        parsed = parser.parse(query)
+
+    # Parse query using hypothesis-based parsing
+    logger.info("[Step 1] Parsing query (hypothesis mode)...")
+    try:
+        hypo_output = selector.parse_query_hypotheses(query)
         result["parse_success"] = True
-        
-        logger.success(f"Root: {parsed.root.categories}")
-        if parsed.root.spatial_constraints:
-            for sc in parsed.root.spatial_constraints:
-                logger.info(f"  Spatial: {sc.relation} → {[a.categories for a in sc.anchors]}")
-        if parsed.root.select_constraint:
-            sc = parsed.root.select_constraint
-            logger.info(f"  Select: {sc.constraint_type.value} ({sc.metric})")
-        
+
+        # Log hypothesis info
+        logger.info(f"  Parse mode: {hypo_output.parse_mode.value}")
+        for h in hypo_output.hypotheses:
+            anchors = []
+            for sc in h.grounding_query.root.spatial_constraints:
+                anchors.extend([a.categories for a in sc.anchors])
+            logger.info(f"  [{h.rank}] {h.kind.value}: {h.grounding_query.root.categories}")
+            if anchors:
+                logger.info(f"      anchors: {anchors}")
+
     except Exception as e:
         logger.error(f"Parse failed: {e}")
         return result
-    
-    # Execute with QueryExecutor.execute
-    logger.info("[Step 2] Executing query (QueryExecutor.execute)...")
+
+    # Execute hypotheses
+    logger.info("[Step 2] Executing hypotheses...")
     try:
-        exec_result, vis = execute_with_tracking(parsed, objects)
+        exec_status, winning_hypo, exec_result = selector.execute_hypotheses(hypo_output)
         result["execute_success"] = True
-        
+        result["execution_status"] = exec_status
+
+        if winning_hypo:
+            result["hypothesis_kind"] = winning_hypo.kind.value
+            logger.info(f"  Status: {exec_status} (via {winning_hypo.kind.value})")
+        else:
+            logger.info(f"  Status: {exec_status}")
+
+        if exec_result.matched_objects:
+            logger.success(f"Final: {len(exec_result.matched_objects)} object(s)")
+            for obj in exec_result.matched_objects:
+                logger.info(f"  - {obj.object_tag} (id={obj.obj_id})")
+
+            result["matched_objects"] = [
+                {"id": obj.obj_id, "tag": obj.object_tag}
+                for obj in exec_result.matched_objects
+            ]
+        else:
+            logger.warning("No objects matched")
+
+    except Exception as e:
+        logger.exception(f"Execute failed: {e}")
+        return result
+
+    # Generate visualizations
+    logger.info("[Step 3] Generating visualizations...")
+    try:
+        # Create visualization data
+        vis = QueryVisualization(query=query)
+
+        # Get parsed grounding query from winning hypothesis for visualization
+        if winning_hypo:
+            parsed = winning_hypo.grounding_query
+            # Create executor for tracking
+            executor = QueryExecutor(
+                objects=objects,
+                relation_checker=SpatialRelationChecker(),
+                use_quick_filters=True
+            )
+
+            # Initial candidates
+            initial_candidates = executor._find_by_categories(parsed.root.categories)
+            initial_ids = set(obj.obj_id for obj in initial_candidates)
+            vis.steps.append(FilteringStep(
+                step_name="initial_candidates",
+                description=f"Initial candidates for categories {parsed.root.categories}",
+                object_ids=initial_ids,
+                color=COLORS['blue']
+            ))
+
+        # Final candidates
+        vis.final_ids = set(obj.obj_id for obj in exec_result.matched_objects)
+        vis.steps.append(FilteringStep(
+            step_name="final_candidates",
+            description=f"Final matched objects ({exec_status})",
+            object_ids=vis.final_ids,
+            color=COLORS['red']
+        ))
+
         # Record steps
         for step in vis.steps:
             result["steps"].append({
@@ -396,34 +469,14 @@ def run_e2e_test(
                 "description": step.description,
                 "count": len(step.object_ids),
             })
-            logger.info(f"  {step.step_name}: {len(step.object_ids)} objects")
-        
-        if exec_result.matched_objects:
-            logger.success(f"Final: {len(exec_result.matched_objects)} object(s)")
-            for obj in exec_result.matched_objects:
-                logger.info(f"  - {obj.object_tag} (id={obj.obj_id})")
-            
-            result["matched_objects"] = [
-                {"id": obj.obj_id, "tag": obj.object_tag}
-                for obj in exec_result.matched_objects
-            ]
-        else:
-            logger.warning("No objects matched")
-            
-    except Exception as e:
-        logger.exception(f"Execute failed: {e}")
-        return result
-    
-    # Generate visualizations
-    logger.info("[Step 3] Generating visualizations...")
-    try:
+
         save_filtering_steps(objects, vis, output_dir)
         # Note: stride=5 is the default used during mapping
         save_keyframes(objects, vis.final_ids, scene_path, output_dir, stride=5)
         logger.success(f"Saved to: {output_dir.name}/")
     except Exception as e:
         logger.error(f"Visualization failed: {e}")
-    
+
     return result
 
 
@@ -467,82 +520,174 @@ def main():
     logger.info(f"Categories: {categories}")
     scene_categories = list(categories.keys())
     
-    # Test queries - from simple to complex (Level 0 to Level 4)
-    # Actual categories (from affordances): 
-    #   throw_pillow(7), armchair(3), sofa(3), ottoman(3), stool(1), 
-    #   side_table(4), coffee_table(1), floor_lamp(1), door(1), window_blinds(3)
+    # ==========================================================================
+    # Test Queries - Two Orthogonal Dimensions
+    # ==========================================================================
+    #
+    # Dimension 1: Target Presence (目标存在性)
+    #   P1: present_exact     - 类别完全匹配 (e.g., "sofa" in scene)
+    #   P2: present_synonym   - 需要同义扩展 (e.g., "couch" -> sofa)
+    #   P3: hard_missing      - 场景中不存在 (e.g., "bed" not in scene)
+    #
+    # Dimension 2: Query Complexity (查询复杂度)
+    #   C1: direct            - 直接类别指代
+    #   C2: spatial_single    - 单一空间关系
+    #   C3: superlative       - 最高级/序数约束
+    #   C4: spatial_nested    - 嵌套空间关系 (A on B near C)
+    #   C5: multi_anchor      - 多锚点 (A near B and near C)
+    #   C6: multi_target      - 多目标 (all X near Y)
+    #   C7: complex_combo     - 组合约束 (superlative + spatial + nested)
+    #
+    # ==========================================================================
+    # room0 Key Objects:
+    #   - Sofas: #27, #31, #48
+    #   - Throw pillows: #3,#18,#19,#28,#30,#44,#49 (7 total)
+    #   - Ottomans: #1,#11,#22 (3 total)
+    #   - Armchairs: #37,#43,#58 (3 total)
+    #   - Coffee table: #32 (with vases, bowl, fish)
+    #   - Floor lamp: #47 (near armchair#43)
+    #   - Door: #21; Window blinds: #16,#34,#50
+    # ==========================================================================
+
     test_queries = [
-        # ============== Level 0: Single object (no constraints) ==============
-        ("a throw_pillow", "L0-01. Single object"),
-        ("the sofa", "L0-02. Single object (definite)"),
-        
-        # ============== Semantic Expansion Tests ==============
-        # These test the LLM's ability to expand general terms to related categories
-        ("a pillow", "SEM-01. Semantic expansion (pillow -> throw_pillow)"),
-        ("a table", "SEM-02. Semantic expansion (table -> side_table, coffee_table)"),
-        ("the lamp", "SEM-03. Semantic expansion (lamp -> floor_lamp)"),
-        ("a chair", "SEM-04. Semantic expansion (chair -> armchair)"),
-        
-        # ============== Level 1: Single constraint ==============
-        # Superlative
-        ("the largest throw_pillow", "L1-01. Superlative (max size)"),
-        ("the smallest ottoman", "L1-02. Superlative (min size)"),
-        
-        # Ordinal
-        ("the first ottoman from the left", "L1-03. Ordinal (position)"),
-        ("the second largest side_table", "L1-04. Ordinal (size)"),
-        
-        # Single spatial relation
-        ("the throw_pillow near the sofa", "L1-05. Spatial (NEAR)"),
-        ("the ottoman near the coffee_table", "L1-06. Spatial (NEAR)"),
-        
-        # Multi-target
-        ("all throw_pillows", "L1-07. Multi-target (all)"),
-        ("all ottomans", "L1-08. Multi-target (all)"),
-        
-        # ============== Level 2: Two constraints / 2-level nesting ==============
-        # Spatial + Superlative
-        ("the smallest ottoman near the sofa", "L2-01. Spatial + Superlative"),
-        ("the largest throw_pillow near the armchair", "L2-02. Spatial + Superlative"),
-        
-        # Anchor superlative (target near anchor[superlative])
-        ("the armchair nearest the door", "L2-03. Anchor superlative (nearest)"),
-        ("the sofa nearest the coffee_table", "L2-04. Anchor superlative (nearest)"),
-        
-        # 2-level spatial nesting (A near B near C)
-        ("the ottoman near the sofa near the window_blinds", "L2-05. 2-level nesting (NEAR+NEAR)"),
-        ("the throw_pillow near the armchair near the door", "L2-06. 2-level nesting (NEAR+NEAR)"),
-        
-        # Multi-anchor (AND logic)
-        ("the ottoman near the sofa and near the coffee_table", "L2-07. Multi-anchor (AND)"),
-        
-        # Multi-target + spatial
-        ("all throw_pillows near the sofa", "L2-08. Multi-target + Spatial"),
-        
-        # ============== Level 3: Three constraints / 3-level nesting ==============
-        # 3-level spatial nesting
-        ("the throw_pillow near the ottoman near the sofa near the window_blinds", "L3-01. 3-level nesting"),
-        
-        # Spatial + Anchor superlative + constraint
-        ("the throw_pillow near the armchair nearest the door", "L3-02. Spatial + Anchor superlative"),
-        
-        # Superlative + 2-level spatial
-        ("the largest throw_pillow near the sofa near the window_blinds", "L3-03. Superlative + 2-level spatial"),
-        
-        # Multi-anchor + superlative
-        ("the smallest ottoman near the sofa and near the armchair", "L3-04. Multi-anchor + Superlative"),
-        
-        # ============== Level 4: Four+ constraints / 4-level nesting ==============
-        # 4-level spatial nesting
-        ("the throw_pillow near the ottoman near the sofa near the armchair near the door", "L4-01. 4-level nesting"),
-        
-        # Complex combination
-        ("the smallest throw_pillow near the largest sofa nearest the door", "L4-02. Multi-superlative + spatial"),
+        # ======================================================================
+        # P1-C1: Present Exact + Direct (存在-精确匹配 + 直接指代)
+        # ======================================================================
+        ("the coffee_table", "P1-C1-01. Exact category, unique instance"),
+        ("the floor_lamp", "P1-C1-02. Exact category, unique instance"),
+        ("a sofa", "P1-C1-03. Exact category, multi-instance"),
+        ("all throw_pillows", "P1-C1-04. Exact category, enumerate all"),
+
+        # ======================================================================
+        # P2-C1: Present Synonym + Direct (存在-同义扩展 + 直接指代)
+        # ======================================================================
+        ("find a couch", "P2-C1-01. Synonym (couch -> sofa)"),
+        ("the lamp", "P2-C1-02. Hypernym (lamp -> floor_lamp/wall_sconce/ceiling_light)"),
+        ("a cushion", "P2-C1-03. Near-synonym (cushion -> throw_pillow/pillow)"),
+        ("a table", "P2-C1-04. Hypernym multi-match (table -> coffee_table/side_table)"),
+        ("the footstool", "P2-C1-05. Synonym (footstool -> ottoman)"),
+        ("a rug", "P2-C1-06. Synonym (rug -> area_rug)"),
+
+        # ======================================================================
+        # P3-C1: Hard Missing + Direct (不存在 + 直接指代)
+        # ======================================================================
+        ("the dining_table", "P3-C1-01. Missing category (dining_table not in scene)"),
+        ("a bed", "P3-C1-02. Missing category (bed not in scene)"),
+        ("the television", "P3-C1-03. Missing category (television not in scene)"),
+
+        # ======================================================================
+        # P1-C2: Present Exact + Spatial Single (存在-精确 + 单一空间)
+        # ======================================================================
+        ("the throw_pillow on the sofa", "P1-C2-01. ON relation"),
+        ("the vase on the coffee_table", "P1-C2-02. ON relation"),
+        ("the ottoman near the stool", "P1-C2-03. NEAR relation"),
+        ("the armchair near the floor_lamp", "P1-C2-04. NEAR relation"),
+        ("the decorative_bowl near the vase", "P1-C2-05. NEAR relation (close objects)"),
+
+        # ======================================================================
+        # P2-C2: Present Synonym + Spatial Single (存在-同义 + 单一空间)
+        # ======================================================================
+        ("the cushion on the couch", "P2-C2-01. Synonym + ON"),
+        ("the pillow near the lamp", "P2-C2-02. Synonym + NEAR"),
+        ("the footstool near the rug", "P2-C2-03. Synonym + NEAR"),
+
+        # ======================================================================
+        # P3-C2: Hard Missing + Spatial (不存在 + 空间关系)
+        # ======================================================================
+        ("the pillow on the bed", "P3-C2-01. Missing anchor (bed not in scene)"),
+        ("the lamp near the desk", "P3-C2-02. Missing anchor (desk not in scene)"),
+        ("the chair near the dining_table", "P3-C2-03. Missing anchor"),
+
+        # ======================================================================
+        # P1-C3: Present Exact + Superlative (存在-精确 + 最高级)
+        # ======================================================================
+        ("the largest sofa", "P1-C3-01. Superlative MAX size"),
+        ("the smallest ottoman", "P1-C3-02. Superlative MIN size"),
+        ("the sofa nearest the coffee_table", "P1-C3-03. Superlative NEAREST"),
+        ("the armchair closest to the door", "P1-C3-04. Superlative NEAREST (distance)"),
+        ("the ottoman farthest from the door", "P1-C3-05. Superlative FARTHEST"),
+        ("the second largest throw_pillow", "P1-C3-06. Ordinal (second)"),
+
+        # ======================================================================
+        # P2-C3: Present Synonym + Superlative (存在-同义 + 最高级)
+        # ======================================================================
+        ("the largest couch", "P2-C3-01. Synonym + superlative MAX"),
+        ("the smallest footstool", "P2-C3-02. Synonym + superlative MIN"),
+        ("the cushion nearest the lamp", "P2-C3-03. Synonym + superlative NEAREST"),
+
+        # ======================================================================
+        # P1-C4: Present Exact + Spatial Nested (存在-精确 + 嵌套空间)
+        # ======================================================================
+        ("the throw_pillow on the sofa near the coffee_table", "P1-C4-01. ON + NEAR chain"),
+        ("the vase on the coffee_table near the sofa", "P1-C4-02. ON + NEAR chain"),
+        ("the ottoman near the area_rug near the coffee_table", "P1-C4-03. NEAR + NEAR chain"),
+        ("the armchair near the sofa near the window_blinds", "P1-C4-04. NEAR + NEAR chain"),
+
+        # ======================================================================
+        # P1-C5: Present Exact + Multi-Anchor (存在-精确 + 多锚点)
+        # ======================================================================
+        ("the ottoman near both the sofa and the stool", "P1-C5-01. Multi-anchor AND"),
+        ("the throw_pillow between the sofa and the armchair", "P1-C5-02. BETWEEN relation"),
+        ("the side_table near the sofa and near the wall_sconce", "P1-C5-03. Multi-anchor AND"),
+        ("the vase between the decorative_bowl and the flower_arrangement", "P1-C5-04. BETWEEN (close objects)"),
+
+        # ======================================================================
+        # P1-C6: Present Exact + Multi-Target (存在-精确 + 多目标)
+        # ======================================================================
+        ("all throw_pillows on the sofa", "P1-C6-01. ALL + ON"),
+        ("all ottomans near the sofa", "P1-C6-02. ALL + NEAR"),
+        ("all armchairs near the window_blinds", "P1-C6-03. ALL + NEAR"),
+        ("all vases on the coffee_table", "P1-C6-04. ALL + ON"),
+
+        # ======================================================================
+        # P2-C6: Present Synonym + Multi-Target (存在-同义 + 多目标)
+        # ======================================================================
+        ("all cushions on the couch", "P2-C6-01. Synonym + ALL + ON"),
+        ("all footstools near the rug", "P2-C6-02. Synonym + ALL + NEAR"),
+
+        # ======================================================================
+        # P1-C7: Present Exact + Complex Combo (存在-精确 + 复杂组合)
+        # ======================================================================
+        ("the smallest throw_pillow on the largest sofa", "P1-C7-01. Dual superlative"),
+        ("the throw_pillow closest to the floor_lamp", "P1-C7-02. Superlative + implicit spatial"),
+        ("the largest ottoman near the sofa nearest the coffee_table", "P1-C7-03. Superlative + nested + superlative"),
+        ("all throw_pillows on the sofa nearest the door", "P1-C7-04. ALL + ON + superlative anchor"),
+        ("the armchair nearest the floor_lamp with a pillow", "P1-C7-05. Superlative + attribute"),
+
+        # ======================================================================
+        # P2-C7: Present Synonym + Complex Combo (存在-同义 + 复杂组合)
+        # ======================================================================
+        ("the smallest cushion on the largest couch", "P2-C7-01. Synonym + dual superlative"),
+        ("all footstools near the couch but not near the door", "P2-C7-02. Synonym + ALL + NEAR + NOT NEAR"),
+
+        # ======================================================================
+        # P3-C7: Hard Missing + Complex (不存在 + 复杂查询)
+        # ======================================================================
+        ("the largest pillow on the bed", "P3-C7-01. Missing + superlative + spatial"),
+        ("all chairs near the dining_table", "P3-C7-02. Missing + ALL + spatial"),
+
+        # ======================================================================
+        # Edge Cases (边界情况)
+        # ======================================================================
+        ("the throw_pillow on the floor_lamp", "EDGE-01. Invalid spatial (pillow not ON lamp)"),
+        ("the sofa inside the ottoman", "EDGE-02. Impossible containment"),
+        ("the ceiling_light near the area_rug", "EDGE-03. Unlikely spatial (vertical separation)"),
     ]
-    
+
+    # Create KeyframeSelector once for all tests (performance optimization)
+    from conceptgraph.query_scene.keyframe_selector import KeyframeSelector
+    selector = KeyframeSelector.from_scene_path(
+        str(scene_path),
+        llm_model="gemini-2.5-pro",
+        use_pool=True  # Enable pool for concurrent parsing
+    )
+
     all_results = []
     for query, test_name in test_queries:
-        result = run_e2e_test(query, objects, scene_categories, scene_path, output_dir, test_name)
+        result = run_e2e_test(
+            query, objects, scene_categories, scene_path, output_dir, test_name,
+            selector=selector
+        )
         all_results.append(result)
     
     # Summary
