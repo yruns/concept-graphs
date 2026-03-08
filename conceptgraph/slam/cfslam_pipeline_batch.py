@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import gzip
 import pickle
+from typing import Any
 
 # Related third party imports
 from PIL import Image
@@ -52,6 +53,37 @@ BG_CLASSES = ["wall", "floor", "ceiling"]
 
 # Disable torch gradient computation
 torch.set_grad_enabled(False)
+
+
+def _sanitize_path_value(value: Any, dataset_root: Path) -> Any:
+    """Recursively replace absolute filesystem paths with dataset-root-relative strings."""
+    if isinstance(value, dict):
+        return {k: _sanitize_path_value(v, dataset_root) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_path_value(v, dataset_root) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_sanitize_path_value(v, dataset_root) for v in value)
+
+    if isinstance(value, Path):
+        value = str(value)
+
+    if isinstance(value, str):
+        candidate = Path(value)
+        if candidate.is_absolute():
+            resolved = candidate.resolve()
+            try:
+                return resolved.relative_to(dataset_root).as_posix()
+            except ValueError:
+                return Path(os.path.relpath(str(resolved), str(dataset_root))).as_posix()
+
+    return value
+
+
+def _sanitize_cfg_for_export(cfg: DictConfig) -> DictConfig:
+    dataset_root = Path(cfg.dataset_root).resolve()
+    cfg_container = omegaconf.OmegaConf.to_container(cfg, resolve=True)
+    sanitized = _sanitize_path_value(cfg_container, dataset_root)
+    return omegaconf.OmegaConf.create(sanitized)
 
 def compute_match_batch(cfg, spatial_sim: torch.Tensor, visual_sim: torch.Tensor) -> torch.Tensor:
     '''
@@ -365,7 +397,7 @@ def main(cfg : DictConfig):
         results = {
             'objects': objects.to_serializable(),
             'bg_objects': None if bg_objects is None else bg_objects.to_serializable(),
-            'cfg': cfg,
+            'cfg': _sanitize_cfg_for_export(cfg),
             'class_names': classes,
             'class_colors': class_colors,
         }
@@ -395,7 +427,7 @@ def main(cfg : DictConfig):
         save_meta_path = save_all_folder / f"meta.pkl.gz"
         with gzip.open(save_meta_path, "wb") as f:
             pickle.dump({
-                'cfg': cfg,
+                'cfg': _sanitize_cfg_for_export(cfg),
                 'class_names': classes,
                 'class_colors': class_colors,
             }, f)

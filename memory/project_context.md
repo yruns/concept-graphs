@@ -10,6 +10,7 @@
 - 推荐 Python 3.10 + conda 环境 `conceptgraph`。
 - 本地路径/密钥通过 `env_vars.bash` 管理（由 `env_vars.bash.template` 复制）。
 - 常见变量：`REPLICA_ROOT`, `GSA_PATH`, `LLM_BASE_URL`, `LLM_MODEL`。
+- 路径策略（2026-03-08 起）：`2b/6b` 产物禁止写入绝对路径；`pcd_saves/*.pkl.gz` 与 `indices/visibility_index.pkl` 中路径字段统一使用相对 `REPLICA_ROOT` 的相对路径。
 
 ## 贡献约定（简）
 - 命名：`snake_case`（函数/文件）、`PascalCase`（类）。

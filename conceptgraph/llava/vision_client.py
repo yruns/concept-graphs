@@ -9,7 +9,11 @@ from PIL import Image
 import numpy as np
 from langchain_core.messages import HumanMessage
 
-from conceptgraph.utils.llm_client import DEFAULT_MODEL, get_langchain_chat_model
+from conceptgraph.utils.llm_client import (
+    DEFAULT_MODEL,
+    get_gemini_pool,
+    get_langchain_chat_model,
+)
 
 
 def _resolve_use_gemini_pool(model_name: str) -> bool:
@@ -42,9 +46,10 @@ class UnifiedVisionChat:
         """
         self.model_name = model_name or os.getenv("LLM_MODEL") or DEFAULT_MODEL
         self.use_pool = _resolve_use_gemini_pool(self.model_name)
-        self._llm = get_langchain_chat_model(
+        self._pool = get_gemini_pool() if self.use_pool else None
+        self._llm = None if self.use_pool else get_langchain_chat_model(
             deployment_name=self.model_name,
-            use_pool=self.use_pool,
+            use_pool=False,
         )
         backend = "GeminiClientPool" if self.use_pool else "llm_client"
         print(f"统一视觉客户端初始化: {self.model_name} ({backend})")
@@ -106,7 +111,11 @@ class UnifiedVisionChat:
     def _generate_text(self, prompt):
         """生成纯文本响应"""
         try:
-            response = self._llm.invoke(prompt)
+            if self.use_pool:
+                # Pool mode: fetch a fresh client to improve load balancing.
+                response = self._pool.get_client_with_config(temperature=0.0).invoke(prompt)
+            else:
+                response = self._llm.invoke(prompt)
             return getattr(response, "content", str(response)).strip()
         except Exception as e:
             print(f"文本生成错误: {e}")
@@ -131,7 +140,12 @@ class UnifiedVisionChat:
         last_error = None
         for attempt in range(max_retries):
             try:
-                response = self._llm.invoke([message])
+                if self.use_pool:
+                    # Rotate client on each attempt to avoid sticking to a throttled key.
+                    llm = self._pool.get_client_with_config(temperature=0.0)
+                    response = llm.invoke([message])
+                else:
+                    response = self._llm.invoke([message])
                 return getattr(response, "content", str(response)).strip()
             except Exception as e:
                 last_error = e

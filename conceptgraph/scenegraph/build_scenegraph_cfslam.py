@@ -70,6 +70,33 @@ def _sanitize_model_name(model_name: str) -> str:
     return model_name.replace("/", "_").replace(":", "_")
 
 
+def _resolve_scene_image_path(raw_path: str, mapfile: str) -> Path:
+    """
+    Resolve image path stored in map object.
+    Supports absolute, scene-relative, and REPLICA_ROOT-relative paths.
+    """
+    path = Path(raw_path)
+    if path.is_absolute():
+        return path
+
+    mapfile_path = Path(mapfile).resolve()
+    scene_root = mapfile_path.parent.parent
+
+    candidates = []
+    replica_root = os.getenv("REPLICA_ROOT")
+    if replica_root:
+        candidates.append(Path(replica_root) / path)
+    candidates.append(scene_root / path)
+    candidates.append(Path.cwd() / path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    # Fall back to scene-root based resolution for clearer error location.
+    return scene_root / path
+
+
 def _sanitize_model_name(model_name: str) -> str:
     return model_name.replace("/", "_").replace(":", "_")
 
@@ -278,11 +305,12 @@ def _process_single_detection(args_tuple):
     Returns:
         dict: 包含处理结果的字典，如果跳过则返回None
     """
-    (obj, idx_det, masking_option, query, console) = args_tuple
+    (obj, idx_det, masking_option, query, console, mapfile) = args_tuple
     
     try:
         # 读取图像
-        image = Image.open(obj["color_path"][idx_det]).convert("RGB")
+        image_path = _resolve_scene_image_path(obj["color_path"][idx_det], mapfile)
+        image = Image.open(image_path).convert("RGB")
         xyxy = obj["xyxy"][idx_det]
         mask = obj["mask"][idx_det]
         conf_value = obj["conf"][idx_det]
@@ -400,7 +428,7 @@ def extract_node_captions(args):
 
         # 准备并行任务参数
         task_args = [
-            (obj, idx_det, args.masking_option, query, console)
+            (obj, idx_det, args.masking_option, query, console, args.mapfile)
             for idx_det in idx_most_conf
         ]
         
@@ -983,7 +1011,8 @@ def annotate_scenegraph(args):
         imgs = []
 
         for idx_det in idx_most_conf:
-            image = Image.open(obj["color_path"][idx_det]).convert("RGB")
+            image_path = _resolve_scene_image_path(obj["color_path"][idx_det], args.mapfile)
+            image = Image.open(image_path).convert("RGB")
             xyxy = obj["xyxy"][idx_det]
             mask = obj["mask"][idx_det]
 

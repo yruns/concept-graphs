@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import os
 import pickle
 import time
 from pathlib import Path
@@ -27,6 +28,16 @@ import cv2
 import numpy as np
 from loguru import logger
 from tqdm import tqdm
+
+
+def to_dataset_relative_path(path: Path, dataset_root: Path) -> str:
+    """Return dataset-root-relative path string."""
+    path = path.resolve()
+    dataset_root = dataset_root.resolve()
+    try:
+        return path.relative_to(dataset_root).as_posix()
+    except ValueError:
+        return Path(os.path.relpath(str(path), str(dataset_root))).as_posix()
 
 
 def load_poses(traj_file: Path) -> List[np.ndarray]:
@@ -457,9 +468,10 @@ def main():
     # Save
     output_path = Path(args.output) if args.output else scene_path / "indices" / "visibility_index.pkl"
     
+    dataset_root = scene_path.parent
     metadata = {
-        'scene_path': str(scene_path),
-        'pcd_file': str(pcd_file),
+        'scene_path': to_dataset_relative_path(scene_path, dataset_root),
+        'pcd_file': to_dataset_relative_path(pcd_file, dataset_root),
         'stride': args.stride,
         'max_distance': args.max_distance,
         'use_depth': args.use_depth,
