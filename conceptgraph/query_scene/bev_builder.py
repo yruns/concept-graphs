@@ -58,6 +58,11 @@ class BEVConfig:
     # Mesh rendering options
     mesh_path: Optional[Union[str, Path]] = None  # Path to mesh PLY file
     render_mesh: bool = True  # Whether to render mesh as background
+    # Camera view options
+    perspective: bool = True  # True: 3/4 perspective view, False: orthographic top-down
+    camera_elevation: float = 60.0  # Elevation angle in degrees (for perspective)
+    camera_azimuth: float = 225.0  # Azimuth angle in degrees (for perspective)
+    camera_fov: float = 60.0  # Field of view in degrees (for perspective)
 
 
 @dataclass
@@ -125,7 +130,7 @@ class BaseBEVBuilder(ABC):
         if not annotations:
             return self._create_empty_image(output_path)
 
-        # Project 3D centroids to 2D BEV
+        # Project 3D centroids to 2D BEV (for orthographic mode)
         self._project_to_2d(annotations)
 
         # Determine mesh path
@@ -136,8 +141,9 @@ class BaseBEVBuilder(ABC):
             img, transform = self._render_mesh_open3d(effective_mesh_path)
             # Transform annotations to pixel coordinates
             for ann in annotations:
+                # Use 3D centroid for perspective projection
                 px, py = self._world_to_pixel_open3d(
-                    np.array(ann.centroid_2d), transform, self.config.image_size
+                    np.array(ann.centroid_3d), transform, self.config.image_size
                 )
                 ann.pixel_pos = (px, py)
         else:
@@ -184,8 +190,9 @@ class BaseBEVBuilder(ABC):
         """
         Render mesh as BEV image using OpenCV triangle rasterization.
 
-        This method loads the mesh, filters ceiling triangles, and renders
-        each triangle with its average vertex color using OpenCV fillPoly.
+        Supports two view modes:
+        - Orthographic (perspective=False): Pure top-down view
+        - Perspective (perspective=True): 3/4 isometric-like view with depth
 
         If the PLY file has polygon faces that fail to decompose into triangles,
         performs Ball Pivoting surface reconstruction to create a proper mesh.
@@ -195,7 +202,6 @@ class BaseBEVBuilder(ABC):
 
         Returns:
             Tuple of (rendered_image, transform_info)
-            transform_info contains: min_xy, max_xy, scale, offset_x, offset_y
 
         Raises:
             FileNotFoundError: If file does not exist
@@ -213,15 +219,12 @@ class BaseBEVBuilder(ABC):
         triangles = np.asarray(mesh.triangles)
 
         # Check if we have a valid mesh with enough triangles
-        # Some PLY files have polygon faces that fail to decompose
-        min_expected_triangles = len(vertices) // 10  # Heuristic
+        min_expected_triangles = len(vertices) // 10
         if len(triangles) < min_expected_triangles:
-            # Mesh didn't load properly, reconstruct from point cloud
             mesh = self._reconstruct_mesh_from_pointcloud(mesh_path)
             vertices = np.asarray(mesh.vertices)
             triangles = np.asarray(mesh.triangles)
 
-        # Validate mesh has colors
         if not mesh.has_vertex_colors():
             raise ValueError(f"Mesh has no vertex colors: {mesh_path}")
 
@@ -233,8 +236,27 @@ class BaseBEVBuilder(ABC):
         keep_mask = face_max_z < ceiling_threshold
         kept_triangles = triangles[keep_mask]
 
-        # Compute transform parameters
-        padding = 0.05  # 5% margin
+        # Choose rendering mode
+        if self.config.perspective:
+            img, transform = self._render_perspective(
+                vertices, colors, kept_triangles, size
+            )
+        else:
+            img, transform = self._render_orthographic(
+                vertices, colors, kept_triangles, size
+            )
+
+        return img, transform
+
+    def _render_orthographic(
+        self,
+        vertices: np.ndarray,
+        colors: np.ndarray,
+        triangles: np.ndarray,
+        size: int,
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Render with orthographic (top-down) projection."""
+        padding = 0.05
         x_min, y_min = vertices[:, :2].min(axis=0)
         x_max, y_max = vertices[:, :2].max(axis=0)
         max_range = max(x_max - x_min, y_max - y_min)
@@ -242,70 +264,155 @@ class BaseBEVBuilder(ABC):
         offset_x = size / 2 - (x_max + x_min) / 2 * scale
         offset_y = size / 2 - (y_max + y_min) / 2 * scale
 
-        # Transform info for coordinate conversion
         transform = {
-            "x_min": x_min,
-            "y_min": y_min,
-            "x_max": x_max,
-            "y_max": y_max,
+            "mode": "orthographic",
+            "x_min": x_min, "y_min": y_min,
+            "x_max": x_max, "y_max": y_max,
             "scale": scale,
-            "offset_x": offset_x,
-            "offset_y": offset_y,
+            "offset_x": offset_x, "offset_y": offset_y,
             "size": size,
         }
 
-        # Vectorized computation of triangle pixel coords and colors
-        tri_verts = vertices[kept_triangles]  # (N, 3, 3)
-        tri_colors = colors[kept_triangles]    # (N, 3, 3)
-
-        # Pixel coordinates
+        # Project to 2D (simple XY drop Z)
+        tri_verts = vertices[triangles]
         px = (tri_verts[:, :, 0] * scale + offset_x).astype(np.int32)
         py = (size - (tri_verts[:, :, 1] * scale + offset_y)).astype(np.int32)
-        pts = np.stack([px, py], axis=-1)  # (N, 3, 2)
+        pts = np.stack([px, py], axis=-1)
 
-        # Average color per triangle (RGB -> BGR for OpenCV)
-        avg_colors = (tri_colors.mean(axis=1) * 255).astype(np.uint8)
-        avg_colors_bgr = avg_colors[:, ::-1]
+        tri_colors = colors[triangles]
+        avg_colors_bgr = (tri_colors.mean(axis=1) * 255).astype(np.uint8)[:, ::-1]
 
-        # Create image with background color
-        bg = self.config.background_color
         img = np.ones((size, size, 3), dtype=np.uint8)
-        img[:, :] = bg
+        img[:, :] = self.config.background_color
 
-        # Render triangles in batches
-        batch_size = 50000
-        n_triangles = len(kept_triangles)
-        for i in range(0, n_triangles, batch_size):
-            end = min(i + batch_size, n_triangles)
-            batch_pts = pts[i:end]
-            batch_colors = avg_colors_bgr[i:end]
+        for j in range(len(pts)):
+            cv2.fillPoly(img, [pts[j]], tuple(int(c) for c in avg_colors_bgr[j]))
 
-            for j in range(len(batch_pts)):
-                cv2.fillPoly(img, [batch_pts[j]], tuple(int(c) for c in batch_colors[j]))
-
-        # Convert BGR to RGB for consistency
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        return img, transform
 
+    def _render_perspective(
+        self,
+        vertices: np.ndarray,
+        colors: np.ndarray,
+        triangles: np.ndarray,
+        size: int,
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """Render with perspective projection (3/4 isometric-like view)."""
+        # Scene bounds
+        bounds_min = vertices.min(axis=0)
+        bounds_max = vertices.max(axis=0)
+        center = (bounds_min + bounds_max) / 2
+        extent = bounds_max - bounds_min
+
+        # Camera setup
+        elevation = np.radians(self.config.camera_elevation)
+        azimuth = np.radians(self.config.camera_azimuth)
+        distance = max(extent[0], extent[1]) * 1.2
+
+        cam_x = center[0] + distance * np.cos(elevation) * np.sin(azimuth)
+        cam_y = center[1] + distance * np.cos(elevation) * np.cos(azimuth)
+        cam_z = center[2] + distance * np.sin(elevation)
+        camera_pos = np.array([cam_x, cam_y, cam_z])
+
+        # View matrix
+        forward = center - camera_pos
+        forward = forward / np.linalg.norm(forward)
+        up = np.array([0, 0, 1])
+        right = np.cross(forward, up)
+        right = right / np.linalg.norm(right)
+        up = np.cross(right, forward)
+
+        R = np.stack([right, -up, forward], axis=0)
+        t = -R @ camera_pos
+
+        # Projection parameters
+        fov = np.radians(self.config.camera_fov)
+        f = size / (2 * np.tan(fov / 2))
+        cx, cy = size / 2, size / 2
+
+        # Transform all vertices to camera space
+        vertices_cam = (R @ vertices.T).T + t
+        z_cam = np.clip(vertices_cam[:, 2], 0.01, None)
+
+        # Project to image plane
+        x_img = f * vertices_cam[:, 0] / z_cam + cx
+        y_img = f * vertices_cam[:, 1] / z_cam + cy
+
+        transform = {
+            "mode": "perspective",
+            "R": R, "t": t,
+            "f": f, "cx": cx, "cy": cy,
+            "camera_pos": camera_pos,
+            "center": center,
+            "size": size,
+        }
+
+        # Sort triangles by depth (painter's algorithm)
+        tri_verts_cam = vertices_cam[triangles]
+        tri_depths = tri_verts_cam[:, :, 2].mean(axis=1)
+        depth_order = np.argsort(-tri_depths)
+
+        # Prepare triangle coordinates and colors
+        tri_x = x_img[triangles].astype(np.int32)
+        tri_y = y_img[triangles].astype(np.int32)
+        tri_pts = np.stack([tri_x, tri_y], axis=-1)
+        tri_colors = (colors[triangles].mean(axis=1) * 255).astype(np.uint8)[:, ::-1]
+
+        img = np.ones((size, size, 3), dtype=np.uint8)
+        img[:, :] = self.config.background_color
+
+        # Render in depth order
+        for idx in depth_order:
+            pts = tri_pts[idx]
+            if np.any(pts < -500) or np.any(pts > size + 500):
+                continue
+            cv2.fillPoly(img, [pts], tuple(int(c) for c in tri_colors[idx]))
+
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         return img, transform
 
     def _world_to_pixel_open3d(
         self,
-        point_2d: np.ndarray,
+        point_3d: np.ndarray,
         transform: Dict[str, Any],
         image_size: int,
     ) -> Tuple[int, int]:
         """
         Convert world coordinates to pixel coordinates for rendered image.
 
-        The conversion matches the transform used in _render_mesh_open3d.
-        """
-        scale = transform["scale"]
-        offset_x = transform["offset_x"]
-        offset_y = transform["offset_y"]
-        size = transform["size"]
+        Args:
+            point_3d: 3D point (x, y, z) in world coordinates
+            transform: Transform info from rendering
+            image_size: Image size (unused, kept for compatibility)
 
-        px = int(point_2d[0] * scale + offset_x)
-        py = int(size - (point_2d[1] * scale + offset_y))
+        Returns:
+            (px, py) pixel coordinates
+        """
+        mode = transform.get("mode", "orthographic")
+
+        if mode == "orthographic":
+            scale = transform["scale"]
+            offset_x = transform["offset_x"]
+            offset_y = transform["offset_y"]
+            size = transform["size"]
+
+            px = int(point_3d[0] * scale + offset_x)
+            py = int(size - (point_3d[1] * scale + offset_y))
+        else:
+            # Perspective projection
+            R = transform["R"]
+            t = transform["t"]
+            f = transform["f"]
+            cx = transform["cx"]
+            cy = transform["cy"]
+
+            # Use full 3D point for perspective projection
+            point_cam = R @ point_3d[:3] + t
+            z_cam = max(point_cam[2], 0.01)
+
+            px = int(f * point_cam[0] / z_cam + cx)
+            py = int(f * point_cam[1] / z_cam + cy)
 
         return px, py
 
