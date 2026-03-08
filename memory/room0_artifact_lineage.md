@@ -31,6 +31,7 @@
 - 主要内容：
   - `full_pcd*_post.pkl.gz` 内含 `objects/bg_objects/cfg/class_names/class_colors`。
   - `objects[i]` 包含 `pcd_np/bbox_np/image_idx/mask/xyxy/class_name` 等多视角融合属性。
+  - 路径字段（如 `objects[*].color_path`、`cfg` 内路径）为相对 `REPLICA_ROOT` 的相对路径，不再写绝对路径。
 
 ## 3) Step 4B: 物体多视角 caption
 - 脚本：`bash bashes/4b_extract_object_captions_detect.sh room0`
@@ -56,6 +57,7 @@
 - 产物：`room0/indices/visibility_index.pkl`
 - 主要内容：
   - `object_to_views` 与 `view_to_objects` 双向索引 + `metadata`（stride、对象数、映射数等）。
+  - `metadata.scene_path / metadata.pcd_file` 为相对 `REPLICA_ROOT` 的相对路径。
 
 ## 6) Query / 可视化实验输出
 - `room0/vis_index_debug/`  

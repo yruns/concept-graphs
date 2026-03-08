@@ -1,6 +1,8 @@
 from collections import Counter
 import copy
 import json
+import os
+from pathlib import Path
 import cv2
 
 import numpy as np
@@ -17,6 +19,25 @@ from conceptgraph.slam.slam_classes import MapObjectList, DetectionList
 
 from conceptgraph.utils.ious import compute_3d_iou, compute_3d_iou_accuracte_batch, mask_subtract_contained, compute_iou_batch
 from conceptgraph.dataset.datasets_common import from_intrinsics_matrix
+
+
+def to_dataset_relative_path(path_value, dataset_root) -> str:
+    """Convert a path to a dataset-root-relative posix path string."""
+    if path_value is None:
+        return ""
+
+    path_obj = Path(path_value)
+    if not path_obj.is_absolute():
+        return path_obj.as_posix()
+
+    root_obj = Path(dataset_root).resolve()
+    abs_obj = path_obj.resolve()
+
+    try:
+        return abs_obj.relative_to(root_obj).as_posix()
+    except ValueError:
+        # Fallback to a non-absolute relative path even if source is outside dataset_root.
+        return Path(os.path.relpath(str(abs_obj), str(root_obj))).as_posix()
 
 def get_classes_colors(classes):
     class_colors = {}
@@ -493,6 +514,7 @@ def gobs_to_detection_list(
     '''
     fg_detection_list = DetectionList()
     bg_detection_list = DetectionList()
+    rel_color_path = to_dataset_relative_path(color_path, cfg.dataset_root)
     
     gobs = resize_gobs(gobs, image)
     gobs = filter_gobs(cfg, gobs, image, BG_CLASSES)
@@ -544,7 +566,7 @@ def gobs_to_detection_list(
         detected_object = {
             'image_idx' : [idx],                             # idx of the image
             'mask_idx' : [mask_idx],                         # idx of the mask/detection
-            'color_path' : [color_path],                     # path to the RGB image
+            'color_path' : [rel_color_path],                 # dataset-root-relative RGB image path
             'class_name' : [class_name],                         # global class id for this detection
             'class_id' : [global_class_id],                         # global class id for this detection
             'num_detections' : 1,                            # number of detections in this object
