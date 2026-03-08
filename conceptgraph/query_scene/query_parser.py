@@ -18,7 +18,11 @@ Usage:
 
 from __future__ import annotations
 
-from typing import List, Optional, ForwardRef, Literal
+import base64
+from io import BytesIO
+from pathlib import Path
+from typing import List, Optional, ForwardRef, Literal, Union
+
 from loguru import logger
 from pydantic import Field, create_model
 
@@ -142,7 +146,18 @@ CONTEXT hypothesis (rank=3, used as last resort):
 
 6. "nearest/closest X" uses SelectConstraint with metric="distance", order="min", reference=X
 
-7. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null"""
+7. "largest/biggest" uses SelectConstraint with metric="size", order="max", reference=null
+
+=== VISUAL CONTEXT (if image provided) ===
+
+When a Bird's Eye View (BEV) image is provided:
+- Each object is shown as a labeled circle at its centroid position
+- Labels follow format "NNN: category" (e.g., "001: sofa", "002: pillow")
+- Object IDs correspond to the SCENE CATEGORIES list
+- Use this visual context to understand spatial relationships
+- Reference the image to verify "near", "on", "between" relationships
+- Use object positions to resolve ambiguous references
+- Note: In the BEV, Y-axis increases downward (image coordinates)"""
 
 
 def get_few_shot_examples() -> str:
@@ -422,6 +437,40 @@ class QueryParser:
             return pool.get_client_with_config(temperature=self.temperature)
         return self._get_llm()
 
+    def _image_to_data_url(
+        self, image_path: Union[str, Path], max_size: int = 800
+    ) -> str:
+        """
+        Convert image file to base64 data URL for multimodal LLM input.
+
+        Args:
+            image_path: Path to the image file
+            max_size: Maximum dimension (width or height) for resizing
+
+        Returns:
+            Data URL string in format "data:image/jpeg;base64,..."
+        """
+        try:
+            from PIL import Image
+        except ImportError:
+            raise ImportError("PIL (Pillow) is required for image encoding. Install with: pip install Pillow")
+
+        img = Image.open(image_path).convert("RGB")
+        w, h = img.size
+
+        # Resize if needed
+        if max(w, h) > max_size:
+            ratio = max_size / max(w, h)
+            new_w, new_h = int(w * ratio), int(h * ratio)
+            img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+        # Encode to JPEG
+        buffer = BytesIO()
+        img.save(buffer, format="JPEG", quality=85)
+        b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
+
+        return f"data:image/jpeg;base64,{b64}"
+
     def _build_dynamic_schema(self):
         """Build a dynamic schema for HypothesisOutputV1 with category enum + UNKNOW."""
         categories = sorted(set(self.scene_categories))
@@ -557,7 +606,11 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         parsed = HypothesisOutputV1.model_validate(data)
         return parsed
 
-    def parse(self, query: str) -> HypothesisOutputV1:
+    def parse(
+        self,
+        query: str,
+        scene_images: Optional[List[Union[str, Path]]] = None,
+    ) -> HypothesisOutputV1:
         """
         Parse a natural language query into a HypothesisOutputV1.
 
@@ -566,6 +619,8 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
 
         Args:
             query: Natural language query string
+            scene_images: Optional list of scene image paths (e.g., BEV images)
+                         for multimodal context. Currently supports k=1 images.
 
         Returns:
             HypothesisOutputV1 object with hypotheses
@@ -575,7 +630,7 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         """
         # For pool mode with Gemini, we handle rate limit retries at the key level
         if self.use_pool and self._is_gemini_model():
-            return self._parse_with_pool_retry(query)
+            return self._parse_with_pool_retry(query, scene_images)
 
         # Standard retry logic for non-pool mode
         max_retries = 2
@@ -584,7 +639,9 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         for attempt in range(max_retries):
             try:
                 logger.info(f"[QueryParser] Parsing query: '{query}' (attempt {attempt + 1})")
-                parsed = self._do_parse(query)
+                if scene_images:
+                    logger.info(f"[QueryParser] Using {len(scene_images)} scene image(s)")
+                parsed = self._do_parse(query, scene_images)
 
                 logger.success(f"[QueryParser] Successfully parsed query")
                 logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
@@ -597,7 +654,11 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         logger.error(f"[QueryParser] All parsing attempts failed: {last_error}")
         raise ValueError(f"Failed to parse query '{query}' after {max_retries} attempts: {last_error}")
 
-    def _parse_with_pool_retry(self, query: str) -> HypothesisOutputV1:
+    def _parse_with_pool_retry(
+        self,
+        query: str,
+        scene_images: Optional[List[Union[str, Path]]] = None,
+    ) -> HypothesisOutputV1:
         """
         Parse with automatic retry across all pool keys on rate limit.
 
@@ -620,6 +681,8 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
 
             try:
                 logger.info(f"[QueryParser] Parsing query: '{query}' (key {key_id})")
+                if scene_images:
+                    logger.info(f"[QueryParser] Using {len(scene_images)} scene image(s)")
 
                 # Get client for this specific config
                 config = pool._configs[config_idx]
@@ -635,7 +698,7 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
                     max_retries=0,  # We handle retries
                 )
 
-                parsed = self._do_parse_with_llm(query, llm)
+                parsed = self._do_parse_with_llm(query, llm, scene_images)
                 pool._record_request(config_idx, rate_limited=False)
 
                 logger.success(f"[QueryParser] Successfully parsed query")
@@ -658,27 +721,69 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         logger.error(f"[QueryParser] All {max_keys} keys exhausted")
         raise ValueError(f"Failed to parse query '{query}' - all keys exhausted: {last_error}")
 
-    def _do_parse(self, query: str) -> HypothesisOutputV1:
+    def _do_parse(
+        self,
+        query: str,
+        scene_images: Optional[List[Union[str, Path]]] = None,
+    ) -> HypothesisOutputV1:
         """Core parsing logic with fresh LLM."""
         llm = self._get_fresh_llm()
-        return self._do_parse_with_llm(query, llm)
+        return self._do_parse_with_llm(query, llm, scene_images)
 
-    def _do_parse_with_llm(self, query: str, llm) -> HypothesisOutputV1:
+    def _do_parse_with_llm(
+        self,
+        query: str,
+        llm,
+        scene_images: Optional[List[Union[str, Path]]] = None,
+    ) -> HypothesisOutputV1:
         """Core parsing logic with provided LLM."""
         prompt = self._build_prompt(query)
 
         # For Gemini models, use JSON mode (they don't support complex $ref schemas)
         if self._is_gemini_model():
-            response = llm.invoke(prompt)
+            # Build multimodal message if images provided
+            if scene_images:
+                from langchain_core.messages import HumanMessage
+
+                content = [{"type": "text", "text": prompt}]
+                for img_path in scene_images:
+                    data_url = self._image_to_data_url(img_path)
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": data_url, "detail": "low"},
+                    })
+
+                message = HumanMessage(content=content)
+                response = llm.invoke([message])
+            else:
+                response = llm.invoke(prompt)
+
             content = response.content if hasattr(response, "content") else str(response)
             parsed = self._parse_json_response(content, query)
         else:
             # Use structured output for non-Gemini models
-            schema = self._build_dynamic_schema()
-            structured_llm = llm.with_structured_output(schema)
-            result = structured_llm.invoke(prompt)
+            # Note: Multimodal + structured output may not be supported by all models
+            if scene_images:
+                from langchain_core.messages import HumanMessage
 
-            parsed = HypothesisOutputV1.model_validate(result.model_dump())
+                content = [{"type": "text", "text": prompt}]
+                for img_path in scene_images:
+                    data_url = self._image_to_data_url(img_path)
+                    content.append({
+                        "type": "image_url",
+                        "image_url": {"url": data_url, "detail": "low"},
+                    })
+
+                message = HumanMessage(content=content)
+                response = llm.invoke([message])
+                content_str = response.content if hasattr(response, "content") else str(response)
+                parsed = self._parse_json_response(content_str, query)
+            else:
+                schema = self._build_dynamic_schema()
+                structured_llm = llm.with_structured_output(schema)
+                result = structured_llm.invoke(prompt)
+
+                parsed = HypothesisOutputV1.model_validate(result.model_dump())
 
         # Assign node IDs for all hypotheses
         for hypo in parsed.hypotheses:

@@ -972,7 +972,7 @@ class KeyframeSelector:
         if self._query_executor is None:
             if self._relation_checker is None:
                 self._relation_checker = SpatialRelationChecker()
-            
+
             self._query_executor = QueryExecutor(
                 objects=self.objects,
                 relation_checker=self._relation_checker,
@@ -980,6 +980,46 @@ class KeyframeSelector:
                 clip_encoder=self._encode_text if HAS_CLIP else None,
             )
         return self._query_executor
+
+    def _generate_scene_images(self) -> List[str]:
+        """
+        Generate scene visualization images for multimodal query parsing.
+
+        Currently generates a single Bird's Eye View (BEV) image with
+        mesh background and annotated object labels. Images are saved to scene_path/bev/.
+
+        Returns:
+            List of image paths (currently k=1)
+        """
+        from .bev_builder import ReplicaBEVBuilder
+
+        # Create bev directory under scene path
+        bev_dir = self.scene_path / "bev"
+        bev_dir.mkdir(parents=True, exist_ok=True)
+        output_path = bev_dir / "scene_bev.png"
+
+        # Find mesh file (e.g., room0_mesh.ply in parent directory)
+        scene_name = self.scene_path.name
+        mesh_path = self.scene_path.parent / f"{scene_name}_mesh.ply"
+        if not mesh_path.exists():
+            # Try current directory
+            mesh_path = self.scene_path / f"{scene_name}_mesh.ply"
+        if not mesh_path.exists():
+            mesh_path = None
+
+        builder = ReplicaBEVBuilder()
+
+        # Pass SceneObjects and mesh path
+        _, bev_path, obj_id_map = builder.build(
+            objects=self.objects,
+            output_path=output_path,
+            mesh_path=mesh_path,
+        )
+        logger.info(f"[KeyframeSelector] Generated BEV image with {len(obj_id_map)} objects: {bev_path}")
+
+        return [str(bev_path)]
+
+        return [str(bev_path)]
 
     def normalize_hypothesis_output(self, payload: Any) -> HypothesisOutputV1:
         """
@@ -1105,6 +1145,7 @@ class KeyframeSelector:
         self,
         query: str,
         max_hypotheses: int = 3,
+        use_visual_context: bool = True,
     ) -> HypothesisOutputV1:
         """
         Parse query into the unified HypothesisOutputV1 structure.
@@ -1115,14 +1156,20 @@ class KeyframeSelector:
         Args:
             query: Natural language query string
             max_hypotheses: Maximum hypotheses (ignored - LLM decides)
+            use_visual_context: If True (default), generate BEV image for multimodal parsing
 
         Returns:
             HypothesisOutputV1 with hypotheses ready for execution
         """
         parser = self._get_query_parser()
 
+        # Generate scene images if visual context requested
+        scene_images = None
+        if use_visual_context:
+            scene_images = self._generate_scene_images()
+
         # LLM directly outputs HypothesisOutputV1
-        output = parser.parse(query)
+        output = parser.parse(query, scene_images=scene_images)
 
         # Sanitize categories in each hypothesis
         sanitized_hypotheses = []

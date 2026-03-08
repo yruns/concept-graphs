@@ -10,6 +10,17 @@
   - LLM 自行判断 `parse_mode`（SINGLE/MULTI）和假设类型（DIRECT/PROXY/CONTEXT）。
   - 无 fallback：解析失败直接抛异常，不再有手动构建逻辑。
   - `SimpleQueryParser` 已移除。
+  - **多模态输入支持**（2026-03-08 新增）：`parse(query, scene_images=[...])` 支持传入场景图像辅助解析。
+- `conceptgraph/query_scene/bev_builder.py`
+  - **新模块**（2026-03-08 新增）：可扩展的 BEV 俯视图渲染框架。
+  - `BaseBEVBuilder` 抽象基类，子类实现 `extract_annotations()` 即可支持新数据集。
+  - `ReplicaBEVBuilder` 针对 Replica 数据集，从 SceneObject 提取 centroid 和 category。
+  - `GenericBEVBuilder` 通用类，自动探测 centroid/category 字段名。
+  - `create_bev_builder(dataset)` 工厂函数，支持 "replica" / "generic"。
+  - 标签格式：`NNN: category`（如 `001: sofa`, `002: throw_pillow`）。
+- `conceptgraph/query_scene/scene_visualizer.py`
+  - 向后兼容封装，re-export `bev_builder.py` 的类。
+  - `SceneBEVGenerator` 是 `ReplicaBEVBuilder` 的别名。
 - `conceptgraph/query_scene/query_executor.py`
   - 递归执行查询树。
   - 执行顺序：类别匹配 -> 属性过滤 -> 空间约束 -> 选择约束。
@@ -18,7 +29,8 @@
 - `conceptgraph/query_scene/keyframe_selector.py`
   - 加载场景对象、可见性索引、图像路径。
   - 新流程：`parse_query_hypotheses` -> `execute_hypotheses` -> `select_keyframes_v2`。
-  - `parse_query_hypotheses` 直接调用 `parser.parse()` 获取 `HypothesisOutputV1`，仅做类别净化。
+  - `parse_query_hypotheses(query, use_visual_context=True)` **默认启用 BEV**，调用 `parser.parse()` 获取 `HypothesisOutputV1`。
+  - `_generate_scene_images()` 调用 `ReplicaBEVBuilder` 生成 BEV 图像传给 LLM。
   - 已删除：`_build_proxy_hypothesis`、`_build_context_hypothesis`、`_find_proxy_anchors_for_target` 等手动构建逻辑。
   - 关键帧策略仍为 `joint_coverage` 贪心覆盖，但输入改为 `HypothesisOutputV1`。
   - 支持 `normalize_hypothesis_output`（兼容 legacy payload）与 `to_grounding_query`（严格 `model_validate`）。
