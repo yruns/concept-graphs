@@ -59,10 +59,8 @@ class BEVConfig:
     mesh_path: Optional[Union[str, Path]] = None  # Path to mesh PLY file
     render_mesh: bool = True  # Whether to render mesh as background
     # Camera view options
-    perspective: bool = True  # True: 3/4 perspective view, False: orthographic top-down
-    camera_elevation: float = 60.0  # Elevation angle in degrees (for perspective)
-    camera_azimuth: float = 225.0  # Azimuth angle in degrees (for perspective)
-    camera_fov: float = 60.0  # Field of view in degrees (for perspective)
+    perspective: bool = True  # True: perspective from above, False: orthographic
+    camera_fov: float = 100.0  # Field of view in degrees (larger = stronger perspective)
 
 
 @dataclass
@@ -298,35 +296,35 @@ class BaseBEVBuilder(ABC):
         triangles: np.ndarray,
         size: int,
     ) -> Tuple[np.ndarray, Dict[str, Any]]:
-        """Render with perspective projection (3/4 isometric-like view)."""
+        """
+        Render with perspective projection from directly above.
+
+        Camera is positioned at scene center looking straight down,
+        with perspective projection that makes edge objects show their sides
+        (near-far perspective effect).
+        """
         # Scene bounds
         bounds_min = vertices.min(axis=0)
         bounds_max = vertices.max(axis=0)
         center = (bounds_min + bounds_max) / 2
         extent = bounds_max - bounds_min
 
-        # Camera setup
-        elevation = np.radians(self.config.camera_elevation)
-        azimuth = np.radians(self.config.camera_azimuth)
-        distance = max(extent[0], extent[1]) * 1.2
+        # Camera directly above scene center
+        # Lower height = stronger perspective effect
+        max_xy = max(extent[0], extent[1])
+        camera_height = max_xy * 0.6  # Relatively close for strong perspective
+        camera_pos = np.array([center[0], center[1], bounds_max[2] + camera_height])
 
-        cam_x = center[0] + distance * np.cos(elevation) * np.sin(azimuth)
-        cam_y = center[1] + distance * np.cos(elevation) * np.cos(azimuth)
-        cam_z = center[2] + distance * np.sin(elevation)
-        camera_pos = np.array([cam_x, cam_y, cam_z])
+        # Camera looks straight down (-Z)
+        forward = np.array([0.0, 0.0, -1.0])
+        up = np.array([0.0, -1.0, 0.0])  # Y points down in image
+        right = np.cross(forward, up)
 
         # View matrix
-        forward = center - camera_pos
-        forward = forward / np.linalg.norm(forward)
-        up = np.array([0, 0, 1])
-        right = np.cross(forward, up)
-        right = right / np.linalg.norm(right)
-        up = np.cross(right, forward)
-
         R = np.stack([right, -up, forward], axis=0)
         t = -R @ camera_pos
 
-        # Projection parameters
+        # Wide FOV for strong perspective effect
         fov = np.radians(self.config.camera_fov)
         f = size / (2 * np.tan(fov / 2))
         cx, cy = size / 2, size / 2
