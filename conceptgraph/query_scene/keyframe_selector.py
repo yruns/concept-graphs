@@ -10,14 +10,12 @@ Key Features:
 3. Visibility-based view selection: Finds views that best observe target objects
 4. Joint coverage optimization: Selects views covering both target and anchor objects
 5. Nested spatial query support: Complex queries like "pillow on sofa nearest door"
+6. Multi-hypothesis fallback: DIRECT → PROXY → CONTEXT for robust grounding
 
 Usage:
-    selector = KeyframeSelector.from_scene_path("/path/to/scene")
-    result = selector.select_keyframes("the pillow on the sofa", k=3)
-    
-    # For nested queries, use select_keyframes_v2:
+    selector = KeyframeSelector.from_scene_path("/path/to/scene", llm_model="gemini-2.5-pro")
     result = selector.select_keyframes_v2("the pillow on the sofa nearest the door", k=3)
-    
+
     # result.keyframe_indices: [42, 67, 89]
     # result.keyframe_paths: [Path("frame000042.jpg"), ...]
     # result.target_objects: [ObjectNode(...), ...]
@@ -231,10 +229,7 @@ class KeyframeSelector:
         self.stride = stride
         self.llm_model = llm_model
         self.use_pool = use_pool
-        
-        # Initialize LLM client (will be created on first use)
-        self._llm_client = None
-        
+
         # Data containers
         self.objects: List[SceneObject] = []
         self.object_features: Optional[np.ndarray] = None  # (N, D)
@@ -766,97 +761,7 @@ class KeyframeSelector:
         except Exception as e:
             logger.warning(f"Text encoding failed: {e}")
             return None
-    
-    def parse_query(self, query: str) -> Tuple[str, Optional[str], Optional[str]]:
-        """Parse query to extract target, anchor, and relation.
-        
-        Uses LLM with scene category context to map query terms to scene labels.
-        LLM is the only parsing method - no regex fallback.
-        
-        Args:
-            query: Natural language query
-            
-        Returns:
-            Tuple of (target, anchor, relation)
-        """
-        max_retries = 2
-        last_error = None
-        
-        for attempt in range(max_retries):
-            try:
-                result = self._parse_with_llm(query)
-                # Validate result - target should not be empty
-                if result[0] and len(result[0]) > 0:
-                    return result
-                else:
-                    logger.warning(f"LLM returned empty target, retrying...")
-            except Exception as e:
-                last_error = e
-                logger.warning(f"LLM parsing attempt {attempt + 1} failed: {e}")
-        
-        # If all retries failed, return query as target with no anchor
-        logger.error(f"LLM parsing failed after {max_retries} attempts: {last_error}")
-        return (query.strip(), None, None)
-    
-    def _parse_with_llm(self, query: str) -> Tuple[str, Optional[str], Optional[str]]:
-        """Parse query using LLM with scene category context."""
-        from conceptgraph.utils.llm_client import get_langchain_chat_model
-        
-        category_list = ", ".join(sorted(set(self.scene_categories)))
-        logger.info(f"[LLM] Calling {self.llm_model} for query parsing...")
-        
-        prompt = f'''You are a query parser. Parse this query and return ONLY a JSON object, no explanation.
 
-Scene objects: [{category_list}]
-
-Query: "{query}"
-
-Rules:
-- target = main object being searched for
-- anchor = reference object for spatial context (null if none)
-- relation = spatial relation like on/near/beside/under (null if none)
-- Map synonyms: pillow→throw_pillow, couch→sofa, lamp→table_lamp, table→side_table
-
-Examples:
-"pillow on the sofa" → {{"target":"throw_pillow","anchor":"sofa","relation":"on"}}
-"lamp near table" → {{"target":"table_lamp","anchor":"side_table","relation":"near"}}
-"ottoman" → {{"target":"ottoman","anchor":null,"relation":null}}
-
-RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
-        
-        # Use llm_client for LLM call
-        if self._llm_client is None:
-            self._llm_client = get_langchain_chat_model(deployment_name=self.llm_model)
-        
-        result = self._llm_client.invoke(prompt)
-        response = result.content
-        
-        # Parse JSON from response
-        logger.debug(f"[LLM] Raw response: {response[:200]}...")
-        import re
-        match = re.search(r'\{[^{}]+\}', response, re.DOTALL)
-        if match:
-            try:
-                data = json.loads(match.group())
-                target = data.get("target", "").strip()
-                anchor = data.get("anchor")
-                relation = data.get("relation")
-                
-                # Clean up null strings
-                if anchor and anchor.lower() in ["null", "none", ""]:
-                    anchor = None
-                if relation and relation.lower() in ["null", "none", ""]:
-                    relation = None
-                
-                if target:
-                    logger.success(f"[LLM] Parsed: target='{target}', anchor='{anchor}', relation='{relation}'")
-                    return (target, anchor, relation)
-            except json.JSONDecodeError as e:
-                logger.warning(f"JSON parse error: {e}")
-        
-        # If JSON parsing failed, raise exception to trigger retry
-        raise ValueError(f"Failed to parse LLM response: {response[:200]}")
-    
     def find_objects(self, query_term: str, top_k: int = 10) -> List[SceneObject]:
         """Find objects matching a query term.
         
@@ -975,100 +880,7 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
                 covered_quality[obj_id] = max(covered_quality[obj_id], obj_score)
         
         return selected
-    
-    def select_keyframes(
-        self,
-        query: str,
-        k: int = 3,
-        strategy: str = "joint_coverage",
-    ) -> KeyframeResult:
-        """Select k keyframes for a query.
-        
-        This is the main entry point for keyframe selection.
-        
-        Args:
-            query: Natural language query
-            k: Number of keyframes to select
-            strategy: Selection strategy
-                - "joint_coverage": Maximize coverage of all relevant objects
-                - "best_per_object": Best view for each object (may exceed k)
-                - "target_only": Only consider target objects
-                
-        Returns:
-            KeyframeResult with selected keyframes and metadata
-        """
-        logger.info(f"Selecting {k} keyframes for: '{query}'")
-        
-        # Step 1: Parse query
-        target_term, anchor_term, relation = self.parse_query(query)
-        logger.info(f"Parsed: target='{target_term}', anchor='{anchor_term}', relation='{relation}'")
-        
-        # Step 2: Find matching objects
-        target_objects = self.find_objects(target_term, top_k=10)
-        anchor_objects = self.find_objects(anchor_term, top_k=5) if anchor_term else []
-        
-        if not target_objects:
-            logger.warning(f"No target objects found for '{target_term}'")
-            return KeyframeResult(
-                query=query,
-                target_term=target_term,
-                anchor_term=anchor_term,
-                keyframe_indices=[],
-                keyframe_paths=[],
-                target_objects=[],
-                anchor_objects=[],
-                metadata={"error": "No matching objects"}
-            )
-        
-        logger.info(f"Found {len(target_objects)} target(s): {[o.object_tag or o.category for o in target_objects[:5]]}")
-        if anchor_objects:
-            logger.info(f"Found {len(anchor_objects)} anchor(s): {[o.object_tag or o.category for o in anchor_objects[:3]]}")
-        
-        # Step 3: Spatial filtering (if anchor exists)
-        if anchor_objects and relation:
-            target_objects = self._spatial_filter(target_objects, anchor_objects[0], relation)
-            logger.info(f"After spatial filter: {len(target_objects)} targets")
-        
-        # Step 4: Select keyframes
-        all_object_ids = [obj.obj_id for obj in target_objects[:5]]
-        if anchor_objects:
-            all_object_ids.extend([obj.obj_id for obj in anchor_objects[:2]])
-        
-        if strategy == "joint_coverage":
-            keyframe_indices = self.get_joint_coverage_views(all_object_ids, max_views=k)
-        elif strategy == "target_only":
-            keyframe_indices = self.get_joint_coverage_views(
-                [obj.obj_id for obj in target_objects[:5]], max_views=k
-            )
-        else:  # best_per_object
-            view_set = set()
-            for obj in target_objects[:5] + anchor_objects[:2]:
-                views = self.get_best_views_for_object(obj.obj_id, top_k=1)
-                view_set.update(views)
-            keyframe_indices = list(view_set)[:k]
-        
-        # Map to image paths
-        keyframe_paths = []
-        for idx in keyframe_indices:
-            if idx < len(self.image_paths):
-                keyframe_paths.append(self.image_paths[idx])
-        
-        logger.success(f"Selected keyframes: {keyframe_indices}")
-        
-        return KeyframeResult(
-            query=query,
-            target_term=target_term,
-            anchor_term=anchor_term,
-            keyframe_indices=keyframe_indices,
-            keyframe_paths=keyframe_paths,
-            target_objects=target_objects,
-            anchor_objects=anchor_objects,
-            metadata={
-                "strategy": strategy,
-                "all_object_ids": all_object_ids,
-            }
-        )
-    
+
     def _spatial_filter(
         self,
         candidates: List[SceneObject],
@@ -1289,235 +1101,6 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
             if cat in hidden_set:
                 raise ValueError(f"Masked category leak detected: '{cat}'")
 
-    def _extract_lexical_hints(self, query: str, max_hints: int = 6) -> List[str]:
-        """Extract lightweight lexical hints from query text."""
-        import re
-
-        stopwords = {
-            "the", "a", "an", "on", "in", "at", "to", "of", "and", "or",
-            "find", "show", "me", "please", "closest", "nearest", "near"
-        }
-        tokens = re.findall(r"[a-zA-Z_]+", query.lower())
-        hints = []
-        for tok in tokens:
-            if tok in stopwords or len(tok) <= 2:
-                continue
-            if tok not in hints:
-                hints.append(tok)
-            if len(hints) >= max_hints:
-                break
-        return hints
-
-    def _collect_anchor_categories(self, grounding_query: GroundingQuery) -> List[str]:
-        """Collect unique anchor categories from root constraints."""
-        anchors = []
-        seen = set()
-        for constraint in grounding_query.root.spatial_constraints:
-            for anchor_node in constraint.anchors:
-                for cat in anchor_node.categories:
-                    if cat == "UNKNOW":
-                        continue
-                    if cat not in seen:
-                        anchors.append(cat)
-                        seen.add(cat)
-        return anchors
-
-    def _build_proxy_hypothesis(
-        self,
-        direct_query: GroundingQuery,
-        lexical_hints: List[str],
-        rank: int,
-    ) -> Optional[QueryHypothesis]:
-        """
-        Build proxy hypothesis for fallback grounding.
-
-        Two scenarios:
-        1. Target category is UNKNOW -> find proxy categories for target
-        2. Anchor category is UNKNOW -> find proxy anchors for spatial relation
-
-        Strategy:
-        - For missing anchors: use target's co-objects as proxy anchors
-        - For missing targets: use anchor's co-objects as proxy targets
-        - Fallback: lexical overlap, then frequency prior
-        """
-        scene_set = set(self.scene_categories)
-        root_categories = [c for c in direct_query.root.categories if c != "UNKNOW"]
-        anchor_categories = self._collect_anchor_categories(direct_query)
-        has_unknown_anchor = self._has_unknown_anchors(direct_query)
-
-        proxy_query = direct_query.model_copy(deep=True)
-        proxy_query.raw_query = f"proxy for: {direct_query.raw_query}"
-
-        # Case 1: Anchor is UNKNOW - find proxy anchors based on target's co-objects
-        if has_unknown_anchor and root_categories:
-            proxy_anchors = self._find_proxy_anchors_for_target(root_categories, lexical_hints)
-            if proxy_anchors:
-                # Replace UNKNOW anchors with proxy categories
-                self._replace_unknown_anchors(proxy_query.root, proxy_anchors)
-                return QueryHypothesis(
-                    kind=HypothesisKind.PROXY,
-                    rank=rank,
-                    grounding_query=proxy_query,
-                    lexical_hints=["proxy_anchor"],
-                )
-
-        # Case 2: Target is UNKNOW - find proxy targets (original logic)
-        candidates = []
-
-        # 2a) Anchor co-object prior
-        for anchor_cat in anchor_categories:
-            if anchor_cat == "UNKNOW":
-                continue
-            anchor_objs = self.find_objects(anchor_cat, top_k=3)
-            for anchor_obj in anchor_objs:
-                for co in anchor_obj.co_objects:
-                    cat = str(co).strip()
-                    if not cat:
-                        continue
-                    if cat in scene_set and cat not in anchor_categories and cat not in candidates:
-                        candidates.append(cat)
-                    if len(candidates) >= 2:
-                        break
-                if len(candidates) >= 2:
-                    break
-            if len(candidates) >= 2:
-                break
-
-        # 2b) Lexical overlap prior
-        if not candidates:
-            for cat in self.scene_categories:
-                cat_l = cat.lower()
-                if any(h in cat_l or cat_l in h for h in lexical_hints):
-                    if cat not in candidates:
-                        candidates.append(cat)
-                if len(candidates) >= 2:
-                    break
-
-        # 2c) Frequency prior
-        if not candidates:
-            freq = Counter(obj.object_tag or obj.category for obj in self.objects)
-            for cat, _ in freq.most_common():
-                if cat in scene_set and cat not in anchor_categories and cat not in candidates:
-                    candidates.append(cat)
-                if len(candidates) >= 2:
-                    break
-
-        if not candidates:
-            return None
-
-        proxy_query.root.categories = candidates[:2]
-
-        return QueryHypothesis(
-            kind=HypothesisKind.PROXY,
-            rank=rank,
-            grounding_query=proxy_query,
-            lexical_hints=["proxy"],
-        )
-
-    def _find_proxy_anchors_for_target(
-        self,
-        target_categories: List[str],
-        lexical_hints: List[str],
-    ) -> List[str]:
-        """
-        Find proxy anchor categories based on target's typical co-occurrences.
-
-        For example, if target is "pillow" and anchor "bed" is missing,
-        look for where pillows typically appear: sofa, armchair, etc.
-        """
-        scene_set = set(self.scene_categories)
-        candidates = []
-
-        # 1) Use target objects' co-objects as proxy anchors
-        for target_cat in target_categories:
-            target_objs = self.find_objects(target_cat, top_k=5)
-            for obj in target_objs:
-                for co in obj.co_objects:
-                    cat = str(co).strip()
-                    if cat and cat in scene_set and cat not in target_categories and cat not in candidates:
-                        candidates.append(cat)
-                    if len(candidates) >= 3:
-                        break
-                if len(candidates) >= 3:
-                    break
-            if len(candidates) >= 3:
-                break
-
-        # 2) Fallback: find categories that commonly appear near target objects
-        if not candidates:
-            # Use spatial proximity - find what's near the target objects
-            for target_cat in target_categories:
-                target_objs = self.find_objects(target_cat, top_k=3)
-                for target_obj in target_objs:
-                    if target_obj.pcd_np is None or len(target_obj.pcd_np) == 0:
-                        continue
-                    target_center = target_obj.pcd_np.mean(axis=0)
-                    # Find nearby objects
-                    for other_obj in self.objects:
-                        if other_obj.obj_id == target_obj.obj_id:
-                            continue
-                        other_cat = other_obj.object_tag or other_obj.category
-                        if other_cat in target_categories or other_cat in candidates:
-                            continue
-                        if other_obj.pcd_np is None or len(other_obj.pcd_np) == 0:
-                            continue
-                        other_center = other_obj.pcd_np.mean(axis=0)
-                        dist = float(((target_center - other_center) ** 2).sum() ** 0.5)
-                        if dist < 2.0 and other_cat in scene_set:  # within 2 meters
-                            candidates.append(other_cat)
-                        if len(candidates) >= 3:
-                            break
-                    if len(candidates) >= 3:
-                        break
-                if len(candidates) >= 3:
-                    break
-
-        return candidates[:2]
-
-    def _replace_unknown_anchors(self, node: QueryNode, proxy_categories: List[str]) -> None:
-        """Recursively replace UNKNOW anchor categories with proxy categories."""
-        for sc in node.spatial_constraints:
-            for anchor in sc.anchors:
-                if "UNKNOW" in anchor.categories:
-                    anchor.categories = proxy_categories
-                # Recurse into nested anchors
-                self._replace_unknown_anchors(anchor, proxy_categories)
-
-        if node.select_constraint and node.select_constraint.reference:
-            ref = node.select_constraint.reference
-            if "UNKNOW" in ref.categories:
-                ref.categories = proxy_categories
-            self._replace_unknown_anchors(ref, proxy_categories)
-
-    def _build_context_hypothesis(
-        self,
-        direct_query: GroundingQuery,
-        rank: int,
-    ) -> Optional[QueryHypothesis]:
-        """Build context-only fallback hypothesis anchored to robust scene objects."""
-        anchor_categories = self._collect_anchor_categories(direct_query)
-
-        if not anchor_categories:
-            freq = Counter(obj.object_tag or obj.category for obj in self.objects)
-            anchor_categories = [cat for cat, _ in freq.most_common(1)]
-
-        if not anchor_categories:
-            return None
-
-        context_query = direct_query.model_copy(deep=True)
-        context_query.raw_query = f"context for: {direct_query.raw_query}"
-        context_query.root.categories = anchor_categories[:2]
-        context_query.root.spatial_constraints = []
-        context_query.root.select_constraint = None
-        context_query.expect_unique = False
-
-        return QueryHypothesis(
-            kind=HypothesisKind.CONTEXT,
-            rank=rank,
-            grounding_query=context_query,
-            lexical_hints=["context"],
-        )
-
     def parse_query_hypotheses(
         self,
         query: str,
@@ -1526,60 +1109,39 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
         """
         Parse query into the unified HypothesisOutputV1 structure.
 
-        The selector now executes this structure directly instead of raw parser dicts.
+        The LLM directly outputs HypothesisOutputV1 with all hypotheses.
+        This method sanitizes categories and validates the output.
+
+        Args:
+            query: Natural language query string
+            max_hypotheses: Maximum hypotheses (ignored - LLM decides)
+
+        Returns:
+            HypothesisOutputV1 with hypotheses ready for execution
         """
         parser = self._get_query_parser()
-        direct_query = self._sanitize_grounding_query_categories(parser.parse(query))
-        lexical_hints = self._extract_lexical_hints(query)
 
-        hypotheses: List[QueryHypothesis] = [
-            QueryHypothesis(
-                kind=HypothesisKind.DIRECT,
-                rank=1,
-                grounding_query=direct_query,
-                lexical_hints=lexical_hints,
+        # LLM directly outputs HypothesisOutputV1
+        output = parser.parse(query)
+
+        # Sanitize categories in each hypothesis
+        sanitized_hypotheses = []
+        for hypo in output.hypotheses:
+            sanitized_gq = self._sanitize_grounding_query_categories(hypo.grounding_query)
+            sanitized_hypo = QueryHypothesis(
+                kind=hypo.kind,
+                rank=hypo.rank,
+                grounding_query=sanitized_gq,
+                lexical_hints=hypo.lexical_hints,
             )
-        ]
+            sanitized_hypotheses.append(sanitized_hypo)
 
-        # Decide whether multi-hypothesis fallback is needed.
-        # Check 1: root target categories
-        direct_root_matches = []
-        for cat in direct_query.root.categories:
-            if cat == "UNKNOW":
-                continue
-            direct_root_matches.extend(self.find_objects(cat, top_k=1))
-
-        needs_multi = (not direct_root_matches) or (direct_query.root.categories == ["UNKNOW"])
-
-        # Check 2: anchor/reference categories (NEW)
-        # If any anchor or reference is UNKNOW, we need multi-hypothesis
-        if not needs_multi:
-            needs_multi = self._has_unknown_anchors(direct_query)
-
-        if needs_multi and max_hypotheses > 1:
-            proxy = self._build_proxy_hypothesis(
-                direct_query=direct_query,
-                lexical_hints=lexical_hints,
-                rank=2,
-            )
-            if proxy is not None:
-                hypotheses.append(proxy)
-
-        if needs_multi and len(hypotheses) < max_hypotheses:
-            context = self._build_context_hypothesis(
-                direct_query=direct_query,
-                rank=len(hypotheses) + 1,
-            )
-            if context is not None:
-                hypotheses.append(context)
-
-        parse_mode = ParseMode.MULTI if len(hypotheses) > 1 else ParseMode.SINGLE
-        output = HypothesisOutputV1(
-            parse_mode=parse_mode,
-            hypotheses=hypotheses,
+        sanitized_output = HypothesisOutputV1(
+            parse_mode=output.parse_mode,
+            hypotheses=sanitized_hypotheses,
         )
-        output.validate_categories(self.scene_categories)
-        return output
+        sanitized_output.validate_categories(self.scene_categories)
+        return sanitized_output
 
     def _has_unknown_anchors(self, grounding_query: GroundingQuery) -> bool:
         """Check if any anchor or reference in the query has UNKNOW category."""
@@ -1595,15 +1157,6 @@ RESPOND WITH ONLY THE JSON OBJECT, NO OTHER TEXT:'''
                     return True
         return False
 
-    def parse_query_nested(self, query: str) -> GroundingQuery:
-        """
-        Backward-compatible nested parsing API.
-
-        Returns the top-ranked direct grounding query from HypothesisOutputV1.
-        """
-        output = self.parse_query_hypotheses(query, max_hypotheses=3)
-        return output.ordered_hypotheses()[0].grounding_query
-    
     def execute_query(self, grounding_query: GroundingQuery) -> ExecutionResult:
         """Execute a parsed grounding query.
         
@@ -1814,15 +1367,15 @@ def select_keyframes(
     **kwargs,
 ) -> KeyframeResult:
     """Convenience function to select keyframes for a query.
-    
+
     Args:
         scene_path: Path to scene directory
         query: Natural language query
         k: Number of keyframes
         **kwargs: Additional arguments for KeyframeSelector
-        
+
     Returns:
         KeyframeResult
     """
     selector = KeyframeSelector.from_scene_path(scene_path, **kwargs)
-    return selector.select_keyframes(query, k=k)
+    return selector.select_keyframes_v2(query, k=k)

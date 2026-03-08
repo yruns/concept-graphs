@@ -72,7 +72,7 @@ def main():
     
     # Run query
     logger.info(f"Running query: '{args.query}'")
-    result = selector.select_keyframes(args.query, k=args.k)
+    result = selector.select_keyframes_v2(args.query, k=args.k)
     
     # Print results
     
