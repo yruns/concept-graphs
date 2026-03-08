@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
+import open3d as o3d
 
 
 @dataclass
@@ -130,26 +131,44 @@ class BaseBEVBuilder(ABC):
         # Determine mesh path
         effective_mesh_path = mesh_path or self.config.mesh_path
 
-        # Load mesh for bounds calculation if available
-        mesh_vertices = None
-        mesh_colors = None
+        # Render with mesh if available
         if effective_mesh_path and self.config.render_mesh:
-            mesh_vertices, mesh_colors = self._load_mesh(effective_mesh_path)
-
-        # Compute bounds and scale (from mesh if available, else from objects)
-        if mesh_vertices is not None:
-            transform = self._compute_transform_from_mesh(mesh_vertices)
+            img, transform = self._render_mesh_open3d(effective_mesh_path)
+            # Transform annotations to pixel coordinates
+            for ann in annotations:
+                px, py = self._world_to_pixel_open3d(
+                    np.array(ann.centroid_2d), transform, self.config.image_size
+                )
+                ann.pixel_pos = (px, py)
         else:
+            # No mesh: create blank image and use object-based transform
             centroids = np.array([a.centroid_2d for a in annotations])
             transform = self._compute_transform(centroids)
+            for ann in annotations:
+                px, py = self._world_to_pixel(np.array(ann.centroid_2d), transform)
+                ann.pixel_pos = (px, py)
+            img = np.ones((self.config.image_size, self.config.image_size, 3), dtype=np.uint8)
+            img[:] = self.config.background_color
 
-        # Transform to pixel coordinates
-        for ann in annotations:
-            px, py = self._world_to_pixel(np.array(ann.centroid_2d), transform)
-            ann.pixel_pos = (px, py)
+        # Draw objects and labels on top of rendered mesh
+        self._draw_objects(img, annotations)
+        self._draw_labels(img, annotations)
 
-        # Create and render image
-        img = self._render_image(annotations, mesh_vertices, mesh_colors, transform)
+        # Draw legend if enabled
+        if self.config.show_legend:
+            self._draw_legend(img, annotations)
+
+        # Add title if enabled
+        if self.config.show_title:
+            cv2.putText(
+                img,
+                self.config.title,
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                self.config.text_color,
+                1,
+            )
 
         # Build label map
         obj_id_to_label = {ann.obj_id: ann.label for ann in annotations}
@@ -159,48 +178,136 @@ class BaseBEVBuilder(ABC):
 
         return img, output_path, obj_id_to_label
 
-    def _load_mesh(self, mesh_path: Union[str, Path]) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Load mesh vertices and colors from PLY file."""
-        try:
-            import open3d as o3d
-            mesh = o3d.io.read_triangle_mesh(str(mesh_path))
-            vertices = np.asarray(mesh.vertices)
-            colors = np.asarray(mesh.vertex_colors)
-            if len(vertices) > 0:
-                return vertices, colors if len(colors) > 0 else None
-        except Exception:
-            pass
-        return None, None
+    def _render_mesh_open3d(
+        self, mesh_path: Union[str, Path]
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
+        """
+        Render mesh as BEV image using OpenCV triangle rasterization.
 
-    def _compute_transform_from_mesh(self, vertices: np.ndarray) -> Dict[str, Any]:
-        """Compute transform from mesh bounds."""
-        padding = self.config.padding
+        This method loads the mesh, filters ceiling triangles, and renders
+        each triangle with its average vertex color using OpenCV fillPoly.
+
+        If the PLY file has polygon faces that fail to decompose into triangles,
+        performs Ball Pivoting surface reconstruction to create a proper mesh.
+
+        Args:
+            mesh_path: Path to the PLY file
+
+        Returns:
+            Tuple of (rendered_image, transform_info)
+            transform_info contains: min_xy, max_xy, scale, offset_x, offset_y
+
+        Raises:
+            FileNotFoundError: If file does not exist
+            ValueError: If geometry has no colors
+        """
+        mesh_path = Path(mesh_path)
+        if not mesh_path.exists():
+            raise FileNotFoundError(f"File not found: {mesh_path}")
+
         size = self.config.image_size
 
-        # Use X, Y axes for BEV
-        x = vertices[:, 0]
-        y = vertices[:, 1]
+        # Try loading as triangle mesh first
+        mesh = o3d.io.read_triangle_mesh(str(mesh_path))
+        vertices = np.asarray(mesh.vertices)
+        triangles = np.asarray(mesh.triangles)
 
-        min_pt = np.array([x.min() - padding, y.min() - padding])
-        max_pt = np.array([x.max() + padding, y.max() + padding])
+        # Check if we have a valid mesh with enough triangles
+        # Some PLY files have polygon faces that fail to decompose
+        min_expected_triangles = len(vertices) // 10  # Heuristic
+        if len(triangles) < min_expected_triangles:
+            # Mesh didn't load properly, reconstruct from point cloud
+            mesh = self._reconstruct_mesh_from_pointcloud(mesh_path)
+            vertices = np.asarray(mesh.vertices)
+            triangles = np.asarray(mesh.triangles)
 
-        range_x = max_pt[0] - min_pt[0]
-        range_y = max_pt[1] - min_pt[1]
-        scale = (size * 0.92) / max(range_x, range_y)
+        # Validate mesh has colors
+        if not mesh.has_vertex_colors():
+            raise ValueError(f"Mesh has no vertex colors: {mesh_path}")
 
-        offset = np.array([
-            (size - range_x * scale) / 2,
-            (size - range_y * scale) / 2,
-        ])
+        colors = np.asarray(mesh.vertex_colors)
 
-        return {
-            "min_pt": min_pt,
-            "max_pt": max_pt,
+        # Filter ceiling triangles
+        ceiling_threshold = self._detect_ceiling_threshold(vertices[:, 2])
+        face_max_z = vertices[triangles].max(axis=1)[:, 2]
+        keep_mask = face_max_z < ceiling_threshold
+        kept_triangles = triangles[keep_mask]
+
+        # Compute transform parameters
+        padding = 0.05  # 5% margin
+        x_min, y_min = vertices[:, :2].min(axis=0)
+        x_max, y_max = vertices[:, :2].max(axis=0)
+        max_range = max(x_max - x_min, y_max - y_min)
+        scale = size * (1 - 2 * padding) / max_range
+        offset_x = size / 2 - (x_max + x_min) / 2 * scale
+        offset_y = size / 2 - (y_max + y_min) / 2 * scale
+
+        # Transform info for coordinate conversion
+        transform = {
+            "x_min": x_min,
+            "y_min": y_min,
+            "x_max": x_max,
+            "y_max": y_max,
             "scale": scale,
-            "offset": offset,
-            "range_x": range_x,
-            "range_y": range_y,
+            "offset_x": offset_x,
+            "offset_y": offset_y,
+            "size": size,
         }
+
+        # Vectorized computation of triangle pixel coords and colors
+        tri_verts = vertices[kept_triangles]  # (N, 3, 3)
+        tri_colors = colors[kept_triangles]    # (N, 3, 3)
+
+        # Pixel coordinates
+        px = (tri_verts[:, :, 0] * scale + offset_x).astype(np.int32)
+        py = (size - (tri_verts[:, :, 1] * scale + offset_y)).astype(np.int32)
+        pts = np.stack([px, py], axis=-1)  # (N, 3, 2)
+
+        # Average color per triangle (RGB -> BGR for OpenCV)
+        avg_colors = (tri_colors.mean(axis=1) * 255).astype(np.uint8)
+        avg_colors_bgr = avg_colors[:, ::-1]
+
+        # Create image with background color
+        bg = self.config.background_color
+        img = np.ones((size, size, 3), dtype=np.uint8)
+        img[:, :] = bg
+
+        # Render triangles in batches
+        batch_size = 50000
+        n_triangles = len(kept_triangles)
+        for i in range(0, n_triangles, batch_size):
+            end = min(i + batch_size, n_triangles)
+            batch_pts = pts[i:end]
+            batch_colors = avg_colors_bgr[i:end]
+
+            for j in range(len(batch_pts)):
+                cv2.fillPoly(img, [batch_pts[j]], tuple(int(c) for c in batch_colors[j]))
+
+        # Convert BGR to RGB for consistency
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        return img, transform
+
+    def _world_to_pixel_open3d(
+        self,
+        point_2d: np.ndarray,
+        transform: Dict[str, Any],
+        image_size: int,
+    ) -> Tuple[int, int]:
+        """
+        Convert world coordinates to pixel coordinates for rendered image.
+
+        The conversion matches the transform used in _render_mesh_open3d.
+        """
+        scale = transform["scale"]
+        offset_x = transform["offset_x"]
+        offset_y = transform["offset_y"]
+        size = transform["size"]
+
+        px = int(point_2d[0] * scale + offset_x)
+        py = int(size - (point_2d[1] * scale + offset_y))
+
+        return px, py
 
     def _project_to_2d(self, annotations: List[AnnotatedObject]) -> None:
         """
@@ -258,48 +365,59 @@ class BaseBEVBuilder(ABC):
         y = int((point[1] - min_pt[1]) * scale + offset[1])
         return x, y
 
-    def _render_image(
-        self,
-        annotations: List[AnnotatedObject],
-        mesh_vertices: Optional[np.ndarray] = None,
-        mesh_colors: Optional[np.ndarray] = None,
-        transform: Optional[Dict[str, Any]] = None,
-    ) -> np.ndarray:
-        """Render the BEV image with mesh background and annotations."""
-        config = self.config
-        size = config.image_size
+    def _reconstruct_mesh_from_pointcloud(
+        self, mesh_path: Union[str, Path]
+    ) -> o3d.geometry.TriangleMesh:
+        """
+        Reconstruct triangle mesh from point cloud using Ball Pivoting.
 
-        # Create blank image
-        img = np.ones((size, size, 3), dtype=np.uint8)
-        img[:] = config.background_color
+        This is used when the PLY file has polygon faces that Open3D
+        cannot decompose into triangles.
 
-        # Render mesh background if available
-        if mesh_vertices is not None and transform is not None:
-            self._render_mesh_background(img, mesh_vertices, mesh_colors, transform)
+        Results are cached to disk for faster subsequent loads.
 
-        # Draw objects
-        self._draw_objects(img, annotations)
+        Args:
+            mesh_path: Path to the PLY file
 
-        # Draw labels with collision avoidance
-        self._draw_labels(img, annotations)
+        Returns:
+            Reconstructed triangle mesh with vertex colors
+        """
+        mesh_path = Path(mesh_path)
 
-        # Draw legend if enabled
-        if config.show_legend:
-            self._draw_legend(img, annotations)
+        # Check for cached reconstructed mesh
+        cache_path = mesh_path.parent / f"{mesh_path.stem}_triangulated.ply"
+        if cache_path.exists():
+            mesh = o3d.io.read_triangle_mesh(str(cache_path))
+            if len(mesh.triangles) > 0 and mesh.has_vertex_colors():
+                return mesh
 
-        # Add title if enabled
-        if config.show_title:
-            cv2.putText(
-                img,
-                config.title,
-                (10, 25),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.6,
-                config.text_color,
-                1,
-            )
+        # Load as point cloud
+        pcd = o3d.io.read_point_cloud(str(mesh_path))
+        if not pcd.has_colors():
+            raise ValueError(f"Point cloud has no colors: {mesh_path}")
 
-        return img
+        # Ensure normals exist for Ball Pivoting
+        if not pcd.has_normals():
+            pcd.estimate_normals()
+
+        # Compute average point distance for radius estimation
+        distances = pcd.compute_nearest_neighbor_distance()
+        avg_dist = np.mean(distances)
+
+        # Ball Pivoting surface reconstruction
+        # Use multiple radii to handle varying point density
+        radii = [avg_dist * 2, avg_dist * 4]
+        mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting(
+            pcd, o3d.utility.DoubleVector(radii)
+        )
+
+        # Transfer colors from point cloud to mesh
+        mesh.vertex_colors = pcd.colors
+
+        # Cache the reconstructed mesh for future use
+        o3d.io.write_triangle_mesh(str(cache_path), mesh)
+
+        return mesh
 
     def _detect_ceiling_threshold(self, z: np.ndarray) -> float:
         """Use histogram to detect ceiling Z threshold."""
@@ -320,64 +438,6 @@ class BaseBEVBuilder(ABC):
 
         # Threshold: 0.15m below the ceiling peak
         return ceiling_peak_z - 0.15
-
-    def _render_mesh_background(
-        self,
-        img: np.ndarray,
-        vertices: np.ndarray,
-        colors: Optional[np.ndarray],
-        transform: Dict[str, Any],
-    ) -> None:
-        """Render mesh vertices as background with interpolation for smooth texture."""
-        from scipy.interpolate import griddata
-
-        size = self.config.image_size
-        min_pt = transform["min_pt"]
-        scale = transform["scale"]
-        offset = transform["offset"]
-
-        # Filter ceiling using histogram peak detection
-        z = vertices[:, 2]
-        ceiling_threshold = self._detect_ceiling_threshold(z)
-        ceiling_mask = z < ceiling_threshold
-        vertices = vertices[ceiling_mask]
-        if colors is not None:
-            colors = colors[ceiling_mask]
-
-        x = vertices[:, 0]
-        y = vertices[:, 1]
-
-        # Transform to pixel coordinates
-        px = ((x - min_pt[0]) * scale + offset[0]).astype(np.float32)
-        py = ((y - min_pt[1]) * scale + offset[1]).astype(np.float32)
-        py = size - 1 - py
-
-        if colors is None:
-            # Fallback: direct pixel assignment
-            valid = (px >= 0) & (px < size) & (py >= 0) & (py < size)
-            img[py[valid].astype(int), px[valid].astype(int)] = [128, 128, 128]
-            return
-
-        # Sample points for interpolation (limit for speed)
-        max_points = 200000
-        sample_step = max(1, len(px) // max_points)
-        px_s = px[::sample_step]
-        py_s = py[::sample_step]
-        colors_s = colors[::sample_step]
-
-        points = np.column_stack([px_s, py_s])
-        grid_x, grid_y = np.mgrid[0:size, 0:size]
-
-        # Interpolate each channel (RGB -> BGR)
-        for c in range(3):
-            channel = griddata(
-                points,
-                colors_s[:, 2 - c] * 255,
-                (grid_x, grid_y),
-                method='linear',
-                fill_value=248,
-            )
-            img[:, :, c] = np.clip(channel, 0, 255).astype(np.uint8)
 
     def _draw_objects(self, img: np.ndarray, annotations: List[AnnotatedObject]) -> None:
         """Draw object circles on image with white outline for visibility."""
