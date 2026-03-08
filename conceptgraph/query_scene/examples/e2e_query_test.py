@@ -521,158 +521,36 @@ def main():
     scene_categories = list(categories.keys())
     
     # ==========================================================================
-    # Test Queries - Two Orthogonal Dimensions
+    # Load generated queries from Gemini V2 generator
     # ==========================================================================
-    #
-    # Dimension 1: Target Presence (目标存在性)
-    #   P1: present_exact     - 类别完全匹配 (e.g., "sofa" in scene)
-    #   P2: present_synonym   - 需要同义扩展 (e.g., "couch" -> sofa)
-    #   P3: hard_missing      - 场景中不存在 (e.g., "bed" not in scene)
-    #
-    # Dimension 2: Query Complexity (查询复杂度)
-    #   C1: direct            - 直接类别指代
-    #   C2: spatial_single    - 单一空间关系
-    #   C3: superlative       - 最高级/序数约束
-    #   C4: spatial_nested    - 嵌套空间关系 (A on B near C)
-    #   C5: multi_anchor      - 多锚点 (A near B and near C)
-    #   C6: multi_target      - 多目标 (all X near Y)
-    #   C7: complex_combo     - 组合约束 (superlative + spatial + nested)
-    #
-    # ==========================================================================
-    # room0 Key Objects:
-    #   - Sofas: #27, #31, #48
-    #   - Throw pillows: #3,#18,#19,#28,#30,#44,#49 (7 total)
-    #   - Ottomans: #1,#11,#22 (3 total)
-    #   - Armchairs: #37,#43,#58 (3 total)
-    #   - Coffee table: #32 (with vases, bowl, fish)
-    #   - Floor lamp: #47 (near armchair#43)
-    #   - Door: #21; Window blinds: #16,#34,#50
-    # ==========================================================================
+    generated_queries_file = scene_path / "generated_queries_v2.json"
+    if generated_queries_file.exists():
+        with open(generated_queries_file) as f:
+            generated_queries = json.load(f)
+        logger.info(f"Loaded {len(generated_queries)} generated queries from {generated_queries_file.name}")
 
-    test_queries = [
-        # ======================================================================
-        # P1-C1: Present Exact + Direct (存在-精确匹配 + 直接指代)
-        # ======================================================================
-        ("the coffee_table", "P1-C1-01. Exact category, unique instance"),
-        ("the floor_lamp", "P1-C1-02. Exact category, unique instance"),
-        ("a sofa", "P1-C1-03. Exact category, multi-instance"),
-        ("all throw_pillows", "P1-C1-04. Exact category, enumerate all"),
+        # Convert to test format
+        test_queries = []
+        for i, q in enumerate(generated_queries):
+            query_text = q["query"]
+            difficulty = q.get("difficulty", "unknown")
+            query_type = q.get("query_type", "unknown")
+            special = q.get("special_case", "none")
+            test_name = f"{difficulty}-{query_type}-{i+1:03d}"
+            if special != "none":
+                test_name += f" ({special})"
+            test_queries.append((query_text, test_name))
+    else:
+        logger.warning(f"Generated queries not found: {generated_queries_file}")
+        logger.info("Using default test queries. Run query_sample_generator_v2 first:")
+        logger.info("  python -m conceptgraph.query_scene.query_sample_generator_v2 100")
 
-        # ======================================================================
-        # P2-C1: Present Synonym + Direct (存在-同义扩展 + 直接指代)
-        # ======================================================================
-        ("find a couch", "P2-C1-01. Synonym (couch -> sofa)"),
-        ("the lamp", "P2-C1-02. Hypernym (lamp -> floor_lamp/wall_sconce/ceiling_light)"),
-        ("a cushion", "P2-C1-03. Near-synonym (cushion -> throw_pillow/pillow)"),
-        ("a table", "P2-C1-04. Hypernym multi-match (table -> coffee_table/side_table)"),
-        ("the footstool", "P2-C1-05. Synonym (footstool -> ottoman)"),
-        ("a rug", "P2-C1-06. Synonym (rug -> area_rug)"),
-
-        # ======================================================================
-        # P3-C1: Hard Missing + Direct (不存在 + 直接指代)
-        # ======================================================================
-        ("the dining_table", "P3-C1-01. Missing category (dining_table not in scene)"),
-        ("a bed", "P3-C1-02. Missing category (bed not in scene)"),
-        ("the television", "P3-C1-03. Missing category (television not in scene)"),
-
-        # ======================================================================
-        # P1-C2: Present Exact + Spatial Single (存在-精确 + 单一空间)
-        # ======================================================================
-        ("the throw_pillow on the sofa", "P1-C2-01. ON relation"),
-        ("the vase on the coffee_table", "P1-C2-02. ON relation"),
-        ("the ottoman near the stool", "P1-C2-03. NEAR relation"),
-        ("the armchair near the floor_lamp", "P1-C2-04. NEAR relation"),
-        ("the decorative_bowl near the vase", "P1-C2-05. NEAR relation (close objects)"),
-
-        # ======================================================================
-        # P2-C2: Present Synonym + Spatial Single (存在-同义 + 单一空间)
-        # ======================================================================
-        ("the cushion on the couch", "P2-C2-01. Synonym + ON"),
-        ("the pillow near the lamp", "P2-C2-02. Synonym + NEAR"),
-        ("the footstool near the rug", "P2-C2-03. Synonym + NEAR"),
-
-        # ======================================================================
-        # P3-C2: Hard Missing + Spatial (不存在 + 空间关系)
-        # ======================================================================
-        ("the pillow on the bed", "P3-C2-01. Missing anchor (bed not in scene)"),
-        ("the lamp near the desk", "P3-C2-02. Missing anchor (desk not in scene)"),
-        ("the chair near the dining_table", "P3-C2-03. Missing anchor"),
-
-        # ======================================================================
-        # P1-C3: Present Exact + Superlative (存在-精确 + 最高级)
-        # ======================================================================
-        ("the largest sofa", "P1-C3-01. Superlative MAX size"),
-        ("the smallest ottoman", "P1-C3-02. Superlative MIN size"),
-        ("the sofa nearest the coffee_table", "P1-C3-03. Superlative NEAREST"),
-        ("the armchair closest to the door", "P1-C3-04. Superlative NEAREST (distance)"),
-        ("the ottoman farthest from the door", "P1-C3-05. Superlative FARTHEST"),
-        ("the second largest throw_pillow", "P1-C3-06. Ordinal (second)"),
-
-        # ======================================================================
-        # P2-C3: Present Synonym + Superlative (存在-同义 + 最高级)
-        # ======================================================================
-        ("the largest couch", "P2-C3-01. Synonym + superlative MAX"),
-        ("the smallest footstool", "P2-C3-02. Synonym + superlative MIN"),
-        ("the cushion nearest the lamp", "P2-C3-03. Synonym + superlative NEAREST"),
-
-        # ======================================================================
-        # P1-C4: Present Exact + Spatial Nested (存在-精确 + 嵌套空间)
-        # ======================================================================
-        ("the throw_pillow on the sofa near the coffee_table", "P1-C4-01. ON + NEAR chain"),
-        ("the vase on the coffee_table near the sofa", "P1-C4-02. ON + NEAR chain"),
-        ("the ottoman near the area_rug near the coffee_table", "P1-C4-03. NEAR + NEAR chain"),
-        ("the armchair near the sofa near the window_blinds", "P1-C4-04. NEAR + NEAR chain"),
-
-        # ======================================================================
-        # P1-C5: Present Exact + Multi-Anchor (存在-精确 + 多锚点)
-        # ======================================================================
-        ("the ottoman near both the sofa and the stool", "P1-C5-01. Multi-anchor AND"),
-        ("the throw_pillow between the sofa and the armchair", "P1-C5-02. BETWEEN relation"),
-        ("the side_table near the sofa and near the wall_sconce", "P1-C5-03. Multi-anchor AND"),
-        ("the vase between the decorative_bowl and the flower_arrangement", "P1-C5-04. BETWEEN (close objects)"),
-
-        # ======================================================================
-        # P1-C6: Present Exact + Multi-Target (存在-精确 + 多目标)
-        # ======================================================================
-        ("all throw_pillows on the sofa", "P1-C6-01. ALL + ON"),
-        ("all ottomans near the sofa", "P1-C6-02. ALL + NEAR"),
-        ("all armchairs near the window_blinds", "P1-C6-03. ALL + NEAR"),
-        ("all vases on the coffee_table", "P1-C6-04. ALL + ON"),
-
-        # ======================================================================
-        # P2-C6: Present Synonym + Multi-Target (存在-同义 + 多目标)
-        # ======================================================================
-        ("all cushions on the couch", "P2-C6-01. Synonym + ALL + ON"),
-        ("all footstools near the rug", "P2-C6-02. Synonym + ALL + NEAR"),
-
-        # ======================================================================
-        # P1-C7: Present Exact + Complex Combo (存在-精确 + 复杂组合)
-        # ======================================================================
-        ("the smallest throw_pillow on the largest sofa", "P1-C7-01. Dual superlative"),
-        ("the throw_pillow closest to the floor_lamp", "P1-C7-02. Superlative + implicit spatial"),
-        ("the largest ottoman near the sofa nearest the coffee_table", "P1-C7-03. Superlative + nested + superlative"),
-        ("all throw_pillows on the sofa nearest the door", "P1-C7-04. ALL + ON + superlative anchor"),
-        ("the armchair nearest the floor_lamp with a pillow", "P1-C7-05. Superlative + attribute"),
-
-        # ======================================================================
-        # P2-C7: Present Synonym + Complex Combo (存在-同义 + 复杂组合)
-        # ======================================================================
-        ("the smallest cushion on the largest couch", "P2-C7-01. Synonym + dual superlative"),
-        ("all footstools near the couch but not near the door", "P2-C7-02. Synonym + ALL + NEAR + NOT NEAR"),
-
-        # ======================================================================
-        # P3-C7: Hard Missing + Complex (不存在 + 复杂查询)
-        # ======================================================================
-        ("the largest pillow on the bed", "P3-C7-01. Missing + superlative + spatial"),
-        ("all chairs near the dining_table", "P3-C7-02. Missing + ALL + spatial"),
-
-        # ======================================================================
-        # Edge Cases (边界情况)
-        # ======================================================================
-        ("the throw_pillow on the floor_lamp", "EDGE-01. Invalid spatial (pillow not ON lamp)"),
-        ("the sofa inside the ottoman", "EDGE-02. Impossible containment"),
-        ("the ceiling_light near the area_rug", "EDGE-03. Unlikely spatial (vertical separation)"),
-    ]
+        # Fallback to minimal test set
+        test_queries = [
+            ("the coffee_table", "fallback-01. direct category"),
+            ("the throw_pillow on the sofa", "fallback-02. spatial relation"),
+            ("the largest sofa", "fallback-03. superlative"),
+        ]
 
     # Create KeyframeSelector once for all tests (performance optimization)
     from conceptgraph.query_scene.keyframe_selector import KeyframeSelector

@@ -77,10 +77,6 @@ from .point_feature_extractor import (
     PointFeatureExtractor, PointFeatureIndex, PointFeatureConfig,
     compute_scene_point_features
 )
-from .lseg_extractor import (
-    LSegFeatureExtractor, DensePointFeatureExtractor, LSegConfig,
-    extract_dense_scene_features
-)
 from .vlm_interface import VLMClient, VLMInputConstructor, VLMOutputParser, VLMInput, STRATEGY_MAP
 from .description_generator import DescriptionGenerator, generate_descriptions
 from .utils import (
