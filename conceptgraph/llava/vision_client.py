@@ -121,10 +121,11 @@ class UnifiedVisionChat:
             print(f"文本生成错误: {e}")
             return f"错误: {str(e)}"
     
-    def _generate_vision(self, prompt, image, max_retries=3):
-        """生成带图像的响应（带重试机制）"""
+    def _generate_vision(self, prompt, image, max_retries=5):
+        """生成带图像的响应（带重试机制，利用 pool 轮换 API key）"""
         import time
-        
+        import random
+
         data_url = self._image_to_data_url(image)
         message = HumanMessage(content=[
             {"type": "text", "text": prompt},
@@ -136,12 +137,12 @@ class UnifiedVisionChat:
                 }
             },
         ])
-        
+
         last_error = None
         for attempt in range(max_retries):
             try:
                 if self.use_pool:
-                    # Rotate client on each attempt to avoid sticking to a throttled key.
+                    # 每次尝试从 pool 获取下一个 client (轮换 API key)
                     llm = self._pool.get_client_with_config(temperature=0.0)
                     response = llm.invoke([message])
                 else:
@@ -150,16 +151,25 @@ class UnifiedVisionChat:
             except Exception as e:
                 last_error = e
                 error_str = str(e).lower()
-                # 对于连接错误和超时，进行重试
-                if "connection" in error_str or "timeout" in error_str or "rate" in error_str:
-                    wait_time = (attempt + 1) * 2  # 指数退避: 2, 4, 6 秒
-                    print(f"视觉生成重试 {attempt + 1}/{max_retries}，等待 {wait_time}s: {e}")
+                # 检查是否为可重试错误（限流、连接、超时等）
+                retryable_patterns = [
+                    "connection", "timeout", "rate", "429", "qpm", "limit",
+                    "quota", "too many", "overloaded", "temporarily"
+                ]
+                should_retry = any(p in error_str for p in retryable_patterns)
+
+                if should_retry and attempt < max_retries - 1:
+                    # 指数退避 + 随机抖动: 1-2s, 2-4s, 4-8s, 8-16s
+                    base_wait = 2 ** attempt
+                    jitter = random.uniform(0, base_wait)
+                    wait_time = base_wait + jitter
+                    print(f"视觉生成重试 {attempt + 1}/{max_retries}，等待 {wait_time:.1f}s")
                     time.sleep(wait_time)
-                else:
+                elif not should_retry:
                     # 非重试类错误，直接退出
                     print(f"视觉生成错误: {e}")
                     return "small object"
-        
+
         print(f"视觉生成失败（已重试 {max_retries} 次）: {last_error}")
         return "small object"  # 返回后备描述
     

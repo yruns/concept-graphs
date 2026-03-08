@@ -44,25 +44,27 @@ torch.autograd.set_grad_enabled(False)
 hf_logging.set_verbosity_error()
 
 
-_VISION_CHAT_TLS = threading.local()
+_VISION_CHAT_LOCK = threading.Lock()
+_VISION_CHAT_INSTANCE = None
 
 
-def _get_thread_local_vision_chat():
+def _get_shared_vision_chat():
     """
-    Reuse one vision chat client per worker thread to avoid repeated
-    initialization for every single detection.
+    Get shared vision chat client instance (thread-safe singleton).
+    All worker threads share the same UnifiedVisionChat instance,
+    which internally uses GeminiClientPool for API key rotation.
     """
-    model_name = os.getenv("LLM_MODEL")
-    cached_chat = getattr(_VISION_CHAT_TLS, "chat", None)
-    cached_model = getattr(_VISION_CHAT_TLS, "model_name", None)
+    global _VISION_CHAT_INSTANCE
 
-    if cached_chat is None or cached_model != model_name:
-        from conceptgraph.llava.vision_client import create_vision_chat
-        cached_chat = create_vision_chat(model_name=model_name)
-        _VISION_CHAT_TLS.chat = cached_chat
-        _VISION_CHAT_TLS.model_name = model_name
+    if _VISION_CHAT_INSTANCE is not None:
+        return _VISION_CHAT_INSTANCE
 
-    return cached_chat
+    with _VISION_CHAT_LOCK:
+        if _VISION_CHAT_INSTANCE is None:
+            model_name = os.getenv("LLM_MODEL")
+            from conceptgraph.llava.vision_client import create_vision_chat
+            _VISION_CHAT_INSTANCE = create_vision_chat(model_name=model_name)
+        return _VISION_CHAT_INSTANCE
 
 
 
@@ -74,16 +76,35 @@ def _resolve_scene_image_path(raw_path: str, mapfile: str) -> Path:
     """
     Resolve image path stored in map object.
     Supports absolute, scene-relative, and REPLICA_ROOT-relative paths.
+
+    If the stored path is an absolute path that doesn't exist (e.g., from another machine),
+    extract the scene-relative portion and resolve using REPLICA_ROOT.
     """
+    import re
+
     path = Path(raw_path)
-    if path.is_absolute():
+    replica_root = os.getenv("REPLICA_ROOT")
+
+    # If absolute path exists, use it directly
+    if path.is_absolute() and path.exists():
         return path
 
+    # For absolute paths that don't exist, extract scene-relative portion
+    # Pattern: .../Replica/<scene>/<relative_path> or .../<scene>/<relative_path>
+    if path.is_absolute():
+        match = re.search(r"(room\d+|office\d+)/(.+)$", raw_path)
+        if match and replica_root:
+            scene_name = match.group(1)
+            relative_path = match.group(2)
+            resolved = Path(replica_root) / scene_name / relative_path
+            if resolved.exists():
+                return resolved
+
+    # For relative paths, try various base directories
     mapfile_path = Path(mapfile).resolve()
     scene_root = mapfile_path.parent.parent
 
     candidates = []
-    replica_root = os.getenv("REPLICA_ROOT")
     if replica_root:
         candidates.append(Path(replica_root) / path)
     candidates.append(scene_root / path)
@@ -95,10 +116,6 @@ def _resolve_scene_image_path(raw_path: str, mapfile: str) -> Path:
 
     # Fall back to scene-root based resolution for clearer error location.
     return scene_root / path
-
-
-def _sanitize_model_name(model_name: str) -> str:
-    return model_name.replace("/", "_").replace(":", "_")
 
 
 def _sanitize_model_name(model_name: str) -> str:
@@ -344,7 +361,7 @@ def _process_single_detection(args_tuple):
             }
         
         # 使用线程本地客户端（每个worker线程仅初始化一次）
-        chat = _get_thread_local_vision_chat()
+        chat = _get_shared_vision_chat()
         chat.reset()
         
         # 获取描述
@@ -369,30 +386,104 @@ def _process_single_detection(args_tuple):
         return None
 
 
+def _process_single_object(args_tuple):
+    """
+    处理单个物体的所有检测（用于物体级别并行）
+
+    Returns:
+        dict: 包含物体的所有处理结果
+    """
+    import time
+    import random
+
+    (idx_obj, obj, masking_option, query, mapfile, max_detections, savedir_feat, savedir_debug) = args_tuple
+
+    # 启动抖动：避免所有 worker 同时发送请求
+    # 随机延迟 0-2 秒，分散请求
+    jitter = random.uniform(0, 2.0)
+    time.sleep(jitter)
+
+    conf = obj["conf"]
+    conf = np.array(conf)
+    idx_most_conf = np.argsort(conf)[::-1]
+
+    features = []
+    captions = []
+    low_confidences = []
+
+    image_list = []
+    caption_list = []
+    confidences_list = []
+    low_confidences_list = []
+    mask_list = []
+
+    if len(idx_most_conf) < 2:
+        return {
+            "id": idx_obj,
+            "captions": [],
+            "low_confidences": [],
+            "skipped": True
+        }
+
+    idx_most_conf = idx_most_conf[:max_detections]
+
+    # 串行处理该物体的所有检测
+    for idx_det in idx_most_conf:
+        result = _process_single_detection(
+            (obj, idx_det, masking_option, query, None, mapfile)
+        )
+
+        if result is None:
+            continue
+
+        if result['skipped']:
+            low_confidences.append(True)
+            continue
+
+        low_confidences.append(result['low_confidence'])
+        features.append(result['image_features'])
+        captions.append(result['outputs'])
+
+        image_list.append(result['image_crop'])
+        caption_list.append(result['outputs'])
+        confidences_list.append(result['conf_value'])
+        low_confidences_list.append(result['low_confidence'])
+        mask_list.append(result['mask_crop'])
+
+    # 保存特征
+    if len(features) > 0:
+        features_tensor = torch.cat(features, dim=0)
+        torch.save(features_tensor, savedir_feat / f"{idx_obj}.pt")
+
+    # 保存调试图像
+    if len(image_list) > 0:
+        plot_images_with_captions(
+            image_list, caption_list, confidences_list,
+            low_confidences_list, mask_list, savedir_debug, idx_obj
+        )
+
+    return {
+        "id": idx_obj,
+        "captions": captions,
+        "low_confidences": low_confidences,
+        "skipped": False
+    }
+
+
 def extract_node_captions(args):
-    # 使用统一的视觉客户端（并行处理版本）
+    # 使用统一的视觉客户端（物体级别并行版本）
     from conceptgraph.slam.slam_classes import MapObjectList
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     # Load the scene map
     scene_map = MapObjectList()
     load_scene_map(args, scene_map)
-    
-    # Scene map is in CFSLAM format
-    # keys: 'image_idx', 'mask_idx', 'color_path', 'class_id', 'num_detections',
-    # 'mask', 'xyxy', 'conf', 'n_points', 'pixel_area', 'contain_number', 'clip_ft',
-    # 'text_ft', 'pcd_np', 'bbox_np', 'pcd_color_np'
 
-    # rich console for pretty printing
-    console = Console()
-    
-    # 并行处理配置
-    NUM_WORKERS = int(os.getenv("NUM_WORKERS", 4))
-    print(f"使用 {NUM_WORKERS} 个并行worker处理")
-    print("统一视觉客户端初始化完成")
-    
+    # 并行处理配置 - 物体级别并行，默认40个worker
+    NUM_WORKERS = int(os.getenv("NUM_WORKERS", 40))
+    print(f"使用 {NUM_WORKERS} 个并行worker处理 (物体级别并行)")
+
     query = "Describe the central object in the image."
-    # query = "Describe the object in the image that is outlined in red."
 
     # Directories to save features and captions
     savedir_feat = Path(args.cachedir) / "cfslam_feat_llava"
@@ -402,109 +493,51 @@ def extract_node_captions(args):
     savedir_debug = Path(args.cachedir) / "cfslam_captions_llava_debug"
     savedir_debug.mkdir(exist_ok=True, parents=True)
 
+    # 准备所有物体的任务参数
+    task_args = [
+        (idx_obj, obj, args.masking_option, query, args.mapfile,
+         args.max_detections_per_object, savedir_feat, savedir_debug)
+        for idx_obj, obj in enumerate(scene_map)
+    ]
+
     caption_dict_list = []
-    
-    # 线程安全的console输出锁
-    console_lock = threading.Lock()
 
-    for idx_obj, obj in tqdm(enumerate(scene_map), total=len(scene_map), desc="处理物体"):
-        conf = obj["conf"]
-        conf = np.array(conf)
-        idx_most_conf = np.argsort(conf)[::-1]
+    # 物体级别并行处理
+    with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
+        future_to_idx = {
+            executor.submit(_process_single_object, arg): arg[0]
+            for arg in task_args
+        }
 
-        features = []
-        captions = []
-        low_confidences = []
-        
-        image_list = []
-        caption_list = []
-        confidences_list = []
-        low_confidences_list = []
-        mask_list = []  # New list for masks
-        
-        if len(idx_most_conf) < 2:
-            continue 
-        idx_most_conf = idx_most_conf[:args.max_detections_per_object]
+        for future in tqdm(as_completed(future_to_idx),
+                          total=len(future_to_idx),
+                          desc="处理物体"):
+            result = future.result()
+            if result and not result.get("skipped", True):
+                caption_dict_list.append({
+                    "id": result["id"],
+                    "captions": result["captions"],
+                    "low_confidences": result["low_confidences"],
+                })
+            elif result:
+                # 跳过的物体也添加空记录
+                caption_dict_list.append({
+                    "id": result["id"],
+                    "captions": [],
+                    "low_confidences": [],
+                })
 
-        # 准备并行任务参数
-        task_args = [
-            (obj, idx_det, args.masking_option, query, console, args.mapfile)
-            for idx_det in idx_most_conf
-        ]
-        
-        # 使用ThreadPoolExecutor并行处理
-        with ThreadPoolExecutor(max_workers=NUM_WORKERS) as executor:
-            # 提交所有任务并保持顺序
-            future_to_idx = {
-                executor.submit(_process_single_detection, arg): i 
-                for i, arg in enumerate(task_args)
-            }
-            
-            # 收集结果（按提交顺序）
-            results = [None] * len(task_args)
-            
-            # 使用tqdm显示进度
-            for future in tqdm(as_completed(future_to_idx), 
-                             total=len(future_to_idx), 
-                             desc=f"  物体{idx_obj}的检测", 
-                             leave=False):
-                idx = future_to_idx[future]
-                results[idx] = future.result()
-        
-        # 按顺序处理结果（保持与原代码完全一致的顺序）
-        for result in results:
-            if result is None:
-                continue
-            
-            if result['skipped']:
-                with console_lock:
-                    print("small object. 跳过视觉描述...")
-                low_confidences.append(True)
-                continue
-            
-            # 正常处理的结果
-            low_confidences.append(result['low_confidence'])
-            
-            with console_lock:
-                console.print("[bold red]User:[/bold red] " + query)
-                console.print("[bold green]统一客户端:[/bold green] " + result['outputs'])
-            
-            # 添加features和captions
-            features.append(result['image_features'])
-            captions.append(result['outputs'])
-            
-            # For the LLava debug folder
-            image_list.append(result['image_crop'])
-            caption_list.append(result['outputs'])
-            confidences_list.append(result['conf_value'])
-            low_confidences_list.append(result['low_confidence'])
-            mask_list.append(result['mask_crop'])
+    # 按id排序
+    caption_dict_list.sort(key=lambda x: x["id"])
 
-        caption_dict_list.append(
-            {
-                "id": idx_obj,
-                "captions": captions,
-                "low_confidences": low_confidences,
-            }
-        )
-
-        # Concatenate the features
-        if len(features) > 0:
-            features = torch.cat(features, dim=0)
-
-        # Save the feature descriptors
-        torch.save(features, savedir_feat / f"{idx_obj}.pt")
-        
-        # Again for the LLava debug folder
-        if len(image_list) > 0:
-            plot_images_with_captions(image_list, caption_list, confidences_list, low_confidences_list, mask_list, savedir_debug, idx_obj)
-
-    # Save the captions
-    # Remove the "The central object in the image is " prefix from 
-    # the captions as it doesnt convey and actual info
+    # 清理caption前缀
     for item in caption_dict_list:
-        item["captions"] = [caption.replace("The central object in the image is ", "") for caption in item["captions"]]
-    # Save the captions to a json file
+        item["captions"] = [
+            caption.replace("The central object in the image is ", "")
+            for caption in item["captions"]
+        ]
+
+    # 保存结果
     with open(Path(args.cachedir) / "cfslam_llava_captions.json", "w", encoding="utf-8") as f:
         json.dump(caption_dict_list, f, indent=4, sort_keys=False)
 

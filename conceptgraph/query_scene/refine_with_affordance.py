@@ -36,6 +36,50 @@ from conceptgraph.utils.llm_client import get_langchain_chat_model, DEFAULT_MODE
 from langchain_core.messages import HumanMessage
 
 
+def _resolve_scene_image_path(raw_path: str, pcd_file: str) -> Path:
+    """
+    Resolve image path stored in map object.
+    Supports absolute, scene-relative, and REPLICA_ROOT-relative paths.
+
+    If the stored path is an absolute path that doesn't exist (e.g., from another machine),
+    extract the scene-relative portion and resolve using REPLICA_ROOT.
+    """
+    import re
+
+    path = Path(raw_path)
+    replica_root = os.getenv("REPLICA_ROOT")
+
+    # If absolute path exists, use it directly
+    if path.is_absolute() and path.exists():
+        return path
+
+    # For absolute paths that don't exist, extract scene-relative portion
+    if path.is_absolute():
+        match = re.search(r"(room\d+|office\d+)/(.+)$", raw_path)
+        if match and replica_root:
+            scene_name = match.group(1)
+            relative_path = match.group(2)
+            resolved = Path(replica_root) / scene_name / relative_path
+            if resolved.exists():
+                return resolved
+
+    # For relative paths, try various base directories
+    pcd_path = Path(pcd_file).resolve()
+    scene_root = pcd_path.parent.parent
+
+    candidates = []
+    if replica_root:
+        candidates.append(Path(replica_root) / path)
+    candidates.append(scene_root / path)
+    candidates.append(Path.cwd() / path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return scene_root / path
+
+
 PROMPT_TEMPLATE = """You are an expert in indoor scene understanding and object affordance analysis. Analyze the target object marked with a red bounding box labeled "TARGET" in the provided images.
 
 ## Task
@@ -122,31 +166,36 @@ def draw_bbox_on_image(image: Image.Image, x1: int, y1: int, x2: int, y2: int,
     return Image.fromarray(image_np)
 
 
-def get_best_object_image(obj: Dict, max_images: int = 5) -> List[Image.Image]:
+def get_best_object_image(obj: Dict, pcd_file: str, max_images: int = 5) -> List[Image.Image]:
     """从物体数据中获取带标注框的完整图像
-    
+
     不再裁剪，而是在完整图像上标注目标物体的位置，
     这样模型可以获得更多上下文信息和周围物体感知。
+
+    Args:
+        obj: 物体数据字典
+        pcd_file: PCD文件路径，用于解析相对路径
+        max_images: 最大图像数量
     """
     images = []
-    
+
     if "color_path" not in obj or "xyxy" not in obj:
         return images
-    
+
     # 按置信度排序
     n_det = len(obj.get("color_path", []))
     if n_det == 0:
         return images
-    
+
     conf = obj.get("conf", [1.0] * n_det)
     indices = np.argsort(conf)[::-1]  # 按置信度降序
-    
+
     for idx in indices[:max_images]:
         try:
-            image_path = obj["color_path"][idx]
-            if not Path(image_path).exists():
+            image_path = _resolve_scene_image_path(obj["color_path"][idx], pcd_file)
+            if not image_path.exists():
                 continue
-            
+
             image = Image.open(image_path).convert("RGB")
             xyxy = obj["xyxy"][idx]
             mask = obj.get("mask", [None] * n_det)[idx]
@@ -377,11 +426,11 @@ def main():
         """Process a single object (for parallel execution)"""
         obj_id = item["id"]
         captions = item.get("captions", [])
-        
+
         # Get object images from pcd data
         images = []
         if obj_id < len(objects):
-            images = get_best_object_image(objects[obj_id], max_images=image_num)
+            images = get_best_object_image(objects[obj_id], args.pcd_file, max_images=image_num)
         
         result = process_object(obj_id, captions, images, llm, max_images=image_num)
         
