@@ -985,39 +985,61 @@ class KeyframeSelector:
         """
         Generate scene visualization images for multimodal query parsing.
 
-        Currently generates a single Bird's Eye View (BEV) image with
-        mesh background and annotated object labels. Images are saved to scene_path/bev/.
+        Generates a Bird's Eye View (BEV) image with mesh background only
+        (no object markers or labels) for pure visual understanding by LLM.
+        Images are cached based on config hash in scene_path/bev/.
 
         Returns:
             List of image paths (currently k=1)
         """
-        from .bev_builder import ReplicaBEVBuilder
+        import hashlib
+        from dataclasses import asdict
+        from .bev_builder import BEVConfig, ReplicaBEVBuilder
+
+        # BEV config: mesh only, no object markers (for pure visual understanding)
+        config = BEVConfig(
+            image_size=1000,
+            perspective=True,
+            show_objects=False,  # No object markers
+            show_labels=False,   # No labels - let LLM understand visually
+        )
+
+        # Compute config hash for caching
+        config_dict = asdict(config)
+        config_str = str(sorted(config_dict.items()))
+        config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
 
         # Create bev directory under scene path
         bev_dir = self.scene_path / "bev"
         bev_dir.mkdir(parents=True, exist_ok=True)
-        output_path = bev_dir / "scene_bev.png"
+        output_path = bev_dir / f"scene_bev_{config_hash}.png"
+
+        # Check cache: if file exists with same config hash, skip generation
+        if output_path.exists():
+            logger.info(f"[KeyframeSelector] Using cached BEV image: {output_path}")
+            return [str(output_path)]
 
         # Find mesh file (e.g., room0_mesh.ply in parent directory)
         scene_name = self.scene_path.name
         mesh_path = self.scene_path.parent / f"{scene_name}_mesh.ply"
+        if not mesh_path.exists():
+            # Try triangulated version
+            mesh_path = self.scene_path.parent / f"{scene_name}_mesh_triangulated.ply"
         if not mesh_path.exists():
             # Try current directory
             mesh_path = self.scene_path / f"{scene_name}_mesh.ply"
         if not mesh_path.exists():
             mesh_path = None
 
-        builder = ReplicaBEVBuilder()
+        builder = ReplicaBEVBuilder(config=config)
 
         # Pass SceneObjects and mesh path
-        _, bev_path, obj_id_map = builder.build(
+        _, bev_path, _ = builder.build(
             objects=self.objects,
             output_path=output_path,
             mesh_path=mesh_path,
         )
-        logger.info(f"[KeyframeSelector] Generated BEV image with {len(obj_id_map)} objects: {bev_path}")
-
-        return [str(bev_path)]
+        logger.info(f"[KeyframeSelector] Generated BEV image (config={config_hash}): {bev_path}")
 
         return [str(bev_path)]
 
