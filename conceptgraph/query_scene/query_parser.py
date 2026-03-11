@@ -670,10 +670,10 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
         max_keys = pool.pool_size
 
         while len(tried_indices) < max_keys:
-            config_idx = pool.get_next_config_index()
+            # Get next client with config index for tracking
+            llm, config_idx = pool.get_next_client(temperature=self.temperature)
 
             if config_idx in tried_indices:
-                # Already tried this key, skip
                 continue
 
             tried_indices.add(config_idx)
@@ -684,39 +684,23 @@ Return ONLY the JSON object matching the HypothesisOutputV1 schema."""
                 if scene_images:
                     logger.info(f"[QueryParser] Using {len(scene_images)} scene image(s)")
 
-                # Get client for this specific config
-                config = pool._configs[config_idx]
-                from langchain_openai import AzureChatOpenAI
-                llm = AzureChatOpenAI(
-                    azure_deployment=config["model_name"],
-                    model=config["model_name"],
-                    api_key=config["api_key"],
-                    azure_endpoint=config["endpoint"],
-                    api_version=config["api_version"],
-                    temperature=self.temperature,
-                    timeout=120,
-                    max_retries=0,  # We handle retries
-                )
-
                 parsed = self._do_parse_with_llm(query, llm, scene_images)
-                pool._record_request(config_idx, rate_limited=False)
+                pool.record_request(config_idx, rate_limited=False)
 
                 logger.success(f"[QueryParser] Successfully parsed query")
                 logger.debug(f"[QueryParser] Result: {parsed.model_dump_json(indent=2)}")
                 return parsed
 
             except Exception as e:
-                if _is_rate_limit_error(e):
-                    pool._record_request(config_idx, rate_limited=True)
+                is_rate_limited = _is_rate_limit_error(e)
+                pool.record_request(config_idx, rate_limited=is_rate_limited)
+
+                if is_rate_limited:
                     logger.warning(f"[QueryParser] Key {key_id} rate limited, trying next key...")
-                    last_error = e
-                    continue
                 else:
-                    pool._record_request(config_idx, rate_limited=False)
-                    # Non-rate-limit error, still try next key for resilience
                     logger.warning(f"[QueryParser] Key {key_id} failed: {e}")
-                    last_error = e
-                    continue
+                last_error = e
+                continue
 
         logger.error(f"[QueryParser] All {max_keys} keys exhausted")
         raise ValueError(f"Failed to parse query '{query}' - all keys exhausted: {last_error}")

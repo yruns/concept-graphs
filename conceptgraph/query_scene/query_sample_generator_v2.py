@@ -808,27 +808,13 @@ Generate {batch_size} queries now. Return ONLY a JSON array, no other text.
             # Try with pool
             tried = set()
             while len(tried) < pool.pool_size:
-                config_idx = pool.get_next_config_index()
+                client, config_idx = pool.get_next_client(temperature=0.8, max_tokens=8000)
                 if config_idx in tried:
                     continue
                 tried.add(config_idx)
 
                 try:
-                    config = pool._configs[config_idx]
-                    from langchain_openai import AzureChatOpenAI
                     from langchain_core.messages import HumanMessage, SystemMessage
-
-                    client = AzureChatOpenAI(
-                        azure_deployment=config["model_name"],
-                        model=config["model_name"],
-                        api_key=config["api_key"],
-                        azure_endpoint=config["endpoint"],
-                        api_version=config["api_version"],
-                        temperature=0.8,
-                        max_tokens=8000,
-                        timeout=180,
-                        max_retries=0,
-                    )
 
                     messages = [
                         SystemMessage(content=SYSTEM_PROMPT),
@@ -837,7 +823,7 @@ Generate {batch_size} queries now. Return ONLY a JSON array, no other text.
 
                     response = client.invoke(messages)
                     content = response.content if hasattr(response, "content") else str(response)
-                    pool._record_request(config_idx, rate_limited=False)
+                    pool.record_request(config_idx, rate_limited=False)
 
                     queries = self._parse_response(content, source_frames)
                     logger.info(f"Batch {batch_idx}: generated {len(queries)} queries from {len(frame_data)} frames")
@@ -845,14 +831,14 @@ Generate {batch_size} queries now. Return ONLY a JSON array, no other text.
 
                 except Exception as e:
                     from conceptgraph.utils.llm_client import _is_rate_limit_error
-                    if _is_rate_limit_error(e):
-                        pool._record_request(config_idx, rate_limited=True)
+                    is_rate_limited = _is_rate_limit_error(e)
+                    pool.record_request(config_idx, rate_limited=is_rate_limited)
+
+                    if is_rate_limited:
                         logger.warning(f"Batch {batch_idx}: rate limited, trying next key...")
-                        continue
                     else:
-                        pool._record_request(config_idx, rate_limited=False)
                         logger.error(f"Batch {batch_idx} error: {e}")
-                        continue
+                    continue
 
             logger.error(f"Batch {batch_idx}: all keys exhausted")
             return []

@@ -6,7 +6,7 @@ Includes Gemini client pool for high-concurrency parallel requests.
 import os
 import threading
 import asyncio
-from typing import Optional, Dict, Any, List, Callable, TypeVar
+from typing import Optional, Dict, Any, List, Callable, TypeVar, Tuple
 from langchain_openai import AzureChatOpenAI
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -200,17 +200,22 @@ class GeminiClientPool:
         config_idx = self.get_next_config_index()
         return self._clients[config_idx]
 
-    def get_client_with_config(
+    def get_next_client(
         self,
         temperature: float = 0.0,
         max_tokens: Optional[int] = None,
-    ) -> AzureChatOpenAI:
-        """Get next client with custom temperature/max_tokens."""
+    ) -> Tuple[AzureChatOpenAI, int]:
+        """
+        Get next client with config index for rate limit tracking.
+
+        Returns:
+            Tuple of (client, config_idx) for use with record_request()
+        """
         self._ensure_initialized()
         config_idx = self.get_next_config_index()
         config = self._configs[config_idx]
 
-        return AzureChatOpenAI(
+        client = AzureChatOpenAI(
             azure_deployment=config["model_name"],
             model=config["model_name"],
             api_key=config["api_key"],
@@ -221,6 +226,11 @@ class GeminiClientPool:
             timeout=120,
             max_retries=0,  # We handle retries ourselves
         )
+        return client, config_idx
+
+    def record_request(self, config_idx: int, rate_limited: bool = False):
+        """Record request result for rate limit tracking (public API)."""
+        self._record_request(config_idx, rate_limited)
 
     def get_config_index_for_client(self, client: AzureChatOpenAI) -> int:
         """Find config index for a given client."""
