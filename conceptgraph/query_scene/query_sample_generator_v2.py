@@ -808,7 +808,7 @@ Generate {batch_size} queries now. Return ONLY a JSON array, no other text.
             # Try with pool
             tried = set()
             while len(tried) < pool.pool_size:
-                client, config_idx = pool.get_next_client(temperature=0.8, max_tokens=8000)
+                client, config_idx = pool.get_next_client(temperature=0.8, max_tokens=8000, timeout=180)
                 if config_idx in tried:
                     continue
                 tried.add(config_idx)

@@ -420,9 +420,9 @@ class QueryParser:
         """Lazy initialization of base LLM."""
         if self._llm is None:
             if self.use_pool and "gemini" in self.llm_model.lower():
-                # Use pool's get_client_with_config for load balancing
+                # Use pool's get_next_client for load balancing
                 pool = _get_gemini_pool()
-                self._llm = pool.get_client_with_config(temperature=self.temperature)
+                self._llm, _config_idx = pool.get_next_client(temperature=self.temperature)
             else:
                 self._llm = _get_langchain_chat_model(
                     deployment_name=self.llm_model,
@@ -434,7 +434,8 @@ class QueryParser:
         """Get a fresh LLM instance (useful for pool to rotate clients)."""
         if self.use_pool and "gemini" in self.llm_model.lower():
             pool = _get_gemini_pool()
-            return pool.get_client_with_config(temperature=self.temperature)
+            client, _config_idx = pool.get_next_client(temperature=self.temperature)
+            return client
         return self._get_llm()
 
     def _image_to_data_url(

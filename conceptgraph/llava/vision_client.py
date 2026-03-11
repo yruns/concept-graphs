@@ -113,7 +113,8 @@ class UnifiedVisionChat:
         try:
             if self.use_pool:
                 # Pool mode: fetch a fresh client to improve load balancing.
-                response = self._pool.get_client_with_config(temperature=0.0).invoke(prompt)
+                client, _config_idx = self._pool.get_next_client(temperature=0.0)
+                response = client.invoke(prompt)
             else:
                 response = self._llm.invoke(prompt)
             return getattr(response, "content", str(response)).strip()
@@ -143,7 +144,7 @@ class UnifiedVisionChat:
             try:
                 if self.use_pool:
                     # 每次尝试从 pool 获取下一个 client (轮换 API key)
-                    llm = self._pool.get_client_with_config(temperature=0.0)
+                    llm, _config_idx = self._pool.get_next_client(temperature=0.0)
                     response = llm.invoke([message])
                 else:
                     response = self._llm.invoke([message])

@@ -204,9 +204,15 @@ class GeminiClientPool:
         self,
         temperature: float = 0.0,
         max_tokens: Optional[int] = None,
+        timeout: int = 120,
     ) -> Tuple[AzureChatOpenAI, int]:
         """
         Get next client with config index for rate limit tracking.
+
+        Args:
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens in response
+            timeout: Request timeout in seconds (default: 120)
 
         Returns:
             Tuple of (client, config_idx) for use with record_request()
@@ -223,7 +229,7 @@ class GeminiClientPool:
             api_version=config["api_version"],
             temperature=temperature,
             max_tokens=max_tokens,
-            timeout=120,
+            timeout=timeout,
             max_retries=0,  # We handle retries ourselves
         )
         return client, config_idx
@@ -532,10 +538,11 @@ def get_langchain_chat_model(
     # Use pool for gemini-2.5-pro if requested
     if use_pool and deployment == "gemini-2.5-pro":
         pool = GeminiClientPool.get_instance()
-        return pool.get_client_with_config(
+        client, _config_idx = pool.get_next_client(
             temperature=temperature if temperature is not None else 0.0,
             max_tokens=max_tokens,
         )
+        return client
 
     # Validate deployment name
     if deployment not in MODEL_CONFIGS:
