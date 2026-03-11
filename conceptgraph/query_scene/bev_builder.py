@@ -58,6 +58,8 @@ class BEVConfig:
     # Mesh rendering options
     mesh_path: Optional[Union[str, Path]] = None  # Path to mesh PLY file
     render_mesh: bool = True  # Whether to render mesh as background
+    show_objects: bool = True  # Whether to draw object markers
+    show_labels: bool = True  # Whether to draw object labels
     # Camera view options
     perspective: bool = True  # True: perspective from above, False: orthographic
     camera_fov: float = 100.0  # Field of view in degrees (larger = stronger perspective)
@@ -154,9 +156,11 @@ class BaseBEVBuilder(ABC):
             img = np.ones((self.config.image_size, self.config.image_size, 3), dtype=np.uint8)
             img[:] = self.config.background_color
 
-        # Draw objects and labels on top of rendered mesh
-        self._draw_objects(img, annotations)
-        self._draw_labels(img, annotations)
+        # Draw objects and labels on top of rendered mesh (if enabled)
+        if self.config.show_objects:
+            self._draw_objects(img, annotations)
+        if self.config.show_labels:
+            self._draw_labels(img, annotations)
 
         # Draw legend if enabled
         if self.config.show_legend:
@@ -316,12 +320,15 @@ class BaseBEVBuilder(ABC):
         camera_pos = np.array([center[0], center[1], bounds_max[2] + camera_height])
 
         # Camera looks straight down (-Z)
+        # We want: world X -> image X (right), world Y -> image -Y (down)
+        # So: right = [1, 0, 0], up_cam = [0, 1, 0] (but image Y is flipped)
+        right = np.array([1.0, 0.0, 0.0])
+        up_cam = np.array([0.0, 1.0, 0.0])
         forward = np.array([0.0, 0.0, -1.0])
-        up = np.array([0.0, -1.0, 0.0])  # Y points down in image
-        right = np.cross(forward, up)
 
-        # View matrix
-        R = np.stack([right, -up, forward], axis=0)
+        # View matrix: transforms world coords to camera coords
+        # Camera X = world X, Camera Y = world Y, Camera Z = -world Z
+        R = np.stack([right, -up_cam, forward], axis=0)
         t = -R @ camera_pos
 
         # Wide FOV for strong perspective effect
