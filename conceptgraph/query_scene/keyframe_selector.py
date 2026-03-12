@@ -994,15 +994,10 @@ class KeyframeSelector:
         """
         import hashlib
         from dataclasses import asdict
-        from .bev_builder import BEVConfig, ReplicaBEVBuilder
+        from .bev_builder import ReplicaBEVBuilder, ReplicaDefaultBEVConfig
 
-        # BEV config: mesh only, no object markers (for pure visual understanding)
-        config = BEVConfig(
-            image_size=1000,
-            perspective=True,
-            show_objects=False,  # No object markers
-            show_labels=False,   # No labels - let LLM understand visually
-        )
+        # Use global default config for consistency with LLMEvaluator
+        config = ReplicaDefaultBEVConfig
 
         # Compute config hash for caching
         config_dict = asdict(config)

@@ -866,6 +866,22 @@ class GenericBEVBuilder(BaseBEVBuilder):
 SceneBEVGenerator = ReplicaBEVBuilder
 
 
+# ============================================================================
+# Default Configs
+# ============================================================================
+
+# Default BEV config for Replica scenes (used by KeyframeSelector and LLMEvaluator)
+# - Perspective view from above
+# - Mesh-only rendering (no object markers or labels)
+# - 1000x1000 resolution for LLM visual understanding
+ReplicaDefaultBEVConfig = BEVConfig(
+    image_size=1000,
+    perspective=True,
+    show_objects=False,
+    show_labels=False,
+)
+
+
 def create_bev_builder(
     dataset: str = "replica",
     config: Optional[BEVConfig] = None,
