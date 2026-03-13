@@ -749,7 +749,7 @@ class LLMEvaluatorV2:
     def _get_pool(self):
         """Lazy initialize GeminiClientPool."""
         if self._pool is None:
-            from conceptgraph.query_scene.gemini_client_pool import GeminiClientPool
+            from conceptgraph.utils.llm_client import GeminiClientPool
 
             self._pool = GeminiClientPool.get_instance()
         return self._pool
@@ -1067,9 +1067,9 @@ class LLMEvaluatorV2:
             )
 
         # Selector suggestions
-        if selector_eval.target_visibility < 5:
+        if selector_eval.target_visibility is not None and selector_eval.target_visibility < 5:
             suggestions.append("Target objects not visible enough in selected frames")
-        if selector_eval.target_completeness < 5:
+        if selector_eval.target_completeness is not None and selector_eval.target_completeness < 5:
             suggestions.append("Target objects partially occluded or cropped")
         if selector_eval.spatial_context is not None and selector_eval.spatial_context < 5:
             suggestions.append("Spatial relationship not clearly shown")

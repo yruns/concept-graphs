@@ -128,6 +128,8 @@ Bird's Eye View 俯视图，由 KeyframeSelector._generate_scene_images() 生成
 - 配置: perspective=True, show_objects=False, show_labels=False
 - 使用场景 mesh 渲染，纯视觉无标注
 - 用于验证 "on the sofa near the window" 这样的空间关系
+
+
 ```
 
 ---
