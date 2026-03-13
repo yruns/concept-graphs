@@ -1,4 +1,6 @@
 {
+    "python.defaultInterpreterPath": "/Users/bytedance/project/concept-graphs/.venv/bin/python",
+    "python.pythonPath": "/Users/bytedance/project/concept-graphs/.venv/bin/python",
     "remote.autoForwardPortsFallback": 0,
     "files.exclude": {
         "gradslam": true,
