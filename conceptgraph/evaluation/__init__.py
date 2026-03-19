@@ -106,6 +106,33 @@ from .related_work import (
     save_related_work_section,
     create_related_work_summary,
 )
+from .academic_positioning import (
+    # Enums
+    NoveltyLevel,
+    ContributionType,
+    PublicationVenue,
+    # Data structures
+    ResearchClaim,
+    CompetingMethod,
+    PublicationStrategy,
+    AcademicPositioning,
+    # Claim factories
+    create_adaptive_evidence_claim,
+    create_symbolic_repair_claim,
+    create_uncertainty_claim,
+    create_unified_policy_claim,
+    create_all_claims,
+    # Competitor factories
+    create_all_competitors,
+    # Strategy factories
+    create_cvpr_strategy,
+    create_neurips_strategy,
+    # Document generation
+    generate_positioning_document,
+    create_academic_positioning,
+    save_positioning_document,
+    create_positioning_summary,
+)
 
 __all__ = [
     # Batch evaluation
@@ -190,4 +217,24 @@ __all__ = [
     "generate_related_work_section",
     "save_related_work_section",
     "create_related_work_summary",
+    # Academic Positioning
+    "NoveltyLevel",
+    "ContributionType",
+    "PublicationVenue",
+    "ResearchClaim",
+    "CompetingMethod",
+    "PublicationStrategy",
+    "AcademicPositioning",
+    "create_adaptive_evidence_claim",
+    "create_symbolic_repair_claim",
+    "create_uncertainty_claim",
+    "create_unified_policy_claim",
+    "create_all_claims",
+    "create_all_competitors",
+    "create_cvpr_strategy",
+    "create_neurips_strategy",
+    "generate_positioning_document",
+    "create_academic_positioning",
+    "save_positioning_document",
+    "create_positioning_summary",
 ]
