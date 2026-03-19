@@ -46,6 +46,16 @@ from .trace_integration import (
     create_tracing_evaluator,
     export_run_trace_report,
 )
+from .result_tables import (
+    MethodResult,
+    BenchmarkResultSet,
+    PaperResults,
+    create_mock_results,
+    generate_table1_main_results,
+    generate_table2_ablation_results,
+    generate_all_tables,
+    load_results_from_directory,
+)
 
 __all__ = [
     # Batch evaluation
@@ -80,4 +90,13 @@ __all__ = [
     "TracingBatchEvaluatorMixin",
     "create_tracing_evaluator",
     "export_run_trace_report",
+    # Result tables
+    "MethodResult",
+    "BenchmarkResultSet",
+    "PaperResults",
+    "create_mock_results",
+    "generate_table1_main_results",
+    "generate_table2_ablation_results",
+    "generate_all_tables",
+    "load_results_from_directory",
 ]

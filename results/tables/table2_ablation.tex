@@ -1,0 +1,19 @@
+\begin{table}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{l ccc c}
+\toprule
+Ablation & OpenEQA & SQA3D & ScanRefer & Avg. Tools \\
+\midrule
+One-shot (no tools) & 47.8 & 44.5 & 45.6 & 0.00 \\
++ Views & 53.4 & 49.8 & 51.2 & 1.03 \\
++ Crops & 51.2 & 48.9 & 53.4 & 1.40 \\
++ Repair & 55.6 & 52.1 & 54.5 & 1.63 \\
+$-$ Uncertainty & 60.1 & 56.9 & 57.8 & 2.33 \\
+\textbf{Full} & 62.3 & 58.7 & 59.8 & 2.13 \\
+\bottomrule
+\end{tabular}
+\caption{Ablation Study: Contribution of each component}
+\label{tab:ablation}
+\end{table}

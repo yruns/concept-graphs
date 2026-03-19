@@ -220,7 +220,10 @@
 
 ## Phase 6: Analysis & Academic Writing (Priority 3)
 
-- [ ] TASK-050: Generate result tables (Table 1, Table 2) | Priority: 3 | Est: 2h
+- [x] TASK-050: Generate result tables (Table 1, Table 2) | Priority: 3 | Est: 2h
+  - File: `conceptgraph/evaluation/result_tables.py`
+  - Tests: `conceptgraph/evaluation/tests/test_result_tables.py` (38 tests passing)
+  - Status: Complete with mock data, LaTeX export, academic alignment
 - [ ] TASK-051: Create visualization figures | Priority: 3 | Est: 4h
   - Detection drop stress test figure
   - Tool usage distribution
@@ -262,6 +265,7 @@
 - [x] TASK-042: Ablation: + request_crops only (60 tests)
 - [x] TASK-043: Ablation: + hypothesis_repair only (67 tests)
 - [x] TASK-044: Ablation: + uncertainty output (63 tests)
+- [x] TASK-050: Generate result tables (Table 1, Table 2) (38 tests)
 
 ---
 
@@ -275,7 +279,8 @@
 | Batch Eval tests | 33 | 33 |
 | Ablation Config tests | 60 | 60 |
 | Trace Integration tests | 33 | 33 |
-| Total test coverage | ~70% | 80% |
+| Result Tables tests | 38 | 38 |
+| Total test coverage | ~72% | 80% |
 | Benchmark loaders | 4/4 | 4/4 |
 
 ---

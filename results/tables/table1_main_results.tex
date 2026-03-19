@@ -1,0 +1,20 @@
+\begin{table}[t]
+\centering
+\small
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{l ccc cc}
+\toprule
+ & OpenEQA & SQA3D & \multicolumn{2}{c}{ScanRefer} \\
+\cmidrule(lr){4-5}
+Method & Acc (\%) & Acc (\%) & Acc@0.25 & Acc@0.50 \\
+\midrule
+Stage 1 Only & 31.2 & 28.9 & 32.4 & 18.9 \\
+One-shot VLM & 47.8 & 44.5 & 45.6 & 31.2 \\
+\textbf{Ours (Two-Stage)} & \textbf{62.3} & \textbf{58.7} & \textbf{59.8} & \textbf{42.3} \\
+\midrule
+\textit{Improvement} & \textit{+X.X} & \textit{+X.X} & \textit{+X.X} & \textit{+X.X} \\
+\bottomrule
+\end{tabular}
+\caption{Main Results: Comparison of our two-stage framework with baselines}
+\label{tab:main-results}
+\end{table}
