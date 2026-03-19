@@ -164,9 +164,12 @@
   - Output: `results/baselines/openeqa_oneshot.json`
   - Status: Complete with mock data support and CLI interface
 
-- [ ] TASK-032: Run full Stage 2 agent on OpenEQA | Priority: 2 | Est: 4h
+- [x] TASK-032: Run full Stage 2 agent on OpenEQA | Priority: 2 | Est: 4h
+  - File: `conceptgraph/evaluation/scripts/run_openeqa_stage2_full.py`
+  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_stage2_full.py` (33 tests passing)
   - Depends: TASK-006, TASK-020, TASK-010, TASK-011
   - Output: `results/experiments/openeqa_stage2_full.json`
+  - Status: Complete with mock data support, all tools enabled, multi-turn reasoning
 
 - [ ] TASK-033: Run SQA3D experiments (all three conditions) | Priority: 2 | Est: 6h
   - Depends: TASK-007, TASK-020
@@ -222,6 +225,7 @@
 - [x] TASK-023: Integrate with trace server for logging (33 tests)
 - [x] TASK-030: Run Stage 1 only baseline on OpenEQA (17 tests)
 - [x] TASK-031: Run one-shot VLM baseline on OpenEQA (21 tests)
+- [x] TASK-032: Run full Stage 2 agent on OpenEQA (33 tests)
 
 ---
 

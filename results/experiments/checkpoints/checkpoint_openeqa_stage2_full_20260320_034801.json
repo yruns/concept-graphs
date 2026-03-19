@@ -1,0 +1,27 @@
+{
+  "run_id": "openeqa_stage2_full_20260320_034801",
+  "completed_ids": [
+    "mock_openeqa_0002",
+    "mock_openeqa_0018",
+    "mock_openeqa_0011",
+    "mock_openeqa_0019",
+    "mock_openeqa_0008",
+    "mock_openeqa_0006",
+    "mock_openeqa_0010",
+    "mock_openeqa_0005",
+    "mock_openeqa_0012",
+    "mock_openeqa_0003",
+    "mock_openeqa_0004",
+    "mock_openeqa_0009",
+    "mock_openeqa_0001",
+    "mock_openeqa_0013",
+    "mock_openeqa_0017",
+    "mock_openeqa_0007",
+    "mock_openeqa_0000",
+    "mock_openeqa_0014",
+    "mock_openeqa_0016",
+    "mock_openeqa_0015"
+  ],
+  "timestamp": "2026-03-20T03:48:01.297750",
+  "num_results": 20
+}

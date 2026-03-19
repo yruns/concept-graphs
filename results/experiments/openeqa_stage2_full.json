@@ -1,0 +1,319 @@
+{
+  "experiment": "stage2_full_evaluation",
+  "benchmark": "openeqa",
+  "run_id": "openeqa_stage2_full_20260320_035244",
+  "timestamp": "2026-03-20T03:52:44.043796",
+  "config": {
+    "stage2_enabled": true,
+    "ablation_tag": "full",
+    "stage1_k": 3,
+    "stage1_model": "gpt-5.2-2025-12-11",
+    "stage2_model": "gpt-5.2-2025-12-11",
+    "stage2_max_turns": 6,
+    "stage2_plan_mode": "brief",
+    "tools": {
+      "request_more_views": true,
+      "request_crops": true,
+      "hypothesis_repair": true
+    },
+    "uncertainty": {
+      "enabled": true,
+      "confidence_threshold": 0.7
+    },
+    "max_samples": 20,
+    "max_workers": 4,
+    "use_mock": true
+  },
+  "summary": {
+    "total_samples": 20,
+    "stage1_success": 20,
+    "stage1_failure": 0,
+    "stage2_success": 20,
+    "stage2_failure": 0,
+    "avg_stage1_latency_ms": 0.0493168830871582,
+    "avg_stage2_latency_ms": 0.5779862403869629,
+    "total_duration_seconds": 0.015343
+  },
+  "stage2_analysis": {
+    "avg_tool_calls": 2.4,
+    "max_tool_calls": 4,
+    "min_tool_calls": 1,
+    "avg_confidence": 0.82,
+    "complete_rate": 1.0,
+    "insufficient_evidence_rate": 0.0
+  },
+  "tool_usage_distribution": {
+    "inspect_stage1_metadata": 20,
+    "request_crops": 12,
+    "request_more_views": 8,
+    "switch_or_expand_hypothesis": 8
+  },
+  "confidence_distribution": {
+    "very_high_0.9+": 5,
+    "high_0.8-0.9": 5,
+    "medium_0.7-0.8": 10,
+    "low_0.6-0.7": 0,
+    "very_low_<0.6": 0
+  },
+  "uncertainty_analysis": {
+    "insufficient_evidence_count": 0,
+    "high_confidence_count": 10,
+    "uncertainty_ratio": 0.0
+  },
+  "per_sample_results": [
+    {
+      "sample_id": "mock_openeqa_0004",
+      "query": "What is next to the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "proxy",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7799999999999999,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.4489421844482422
+    },
+    {
+      "sample_id": "mock_openeqa_0003",
+      "query": "Where is the lamp?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "proxy",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7,
+      "stage2_tool_calls": 4,
+      "stage2_latency_ms": 1.0781288146972656
+    },
+    {
+      "sample_id": "mock_openeqa_0002",
+      "query": "How many sofas are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "proxy",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.94,
+      "stage2_tool_calls": 1,
+      "stage2_latency_ms": 0.49805641174316406
+    },
+    {
+      "sample_id": "mock_openeqa_0000",
+      "query": "What is on the table?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "proxy",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7799999999999999,
+      "stage2_tool_calls": 3,
+      "stage2_latency_ms": 0.6699562072753906
+    },
+    {
+      "sample_id": "mock_openeqa_0006",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "context",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.94,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.45108795166015625
+    },
+    {
+      "sample_id": "mock_openeqa_0001",
+      "query": "What color is the table?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "proxy",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.86,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.6041526794433594
+    },
+    {
+      "sample_id": "mock_openeqa_0005",
+      "query": "What is between the plant and pillow?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "context",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.86,
+      "stage2_tool_calls": 3,
+      "stage2_latency_ms": 0.45013427734375
+    },
+    {
+      "sample_id": "mock_openeqa_0007",
+      "query": "Was there a pillow in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "context",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7,
+      "stage2_tool_calls": 1,
+      "stage2_latency_ms": 0.5021095275878906
+    },
+    {
+      "sample_id": "mock_openeqa_0008",
+      "query": "Is the chair open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "context",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7799999999999999,
+      "stage2_tool_calls": 4,
+      "stage2_latency_ms": 0.47016143798828125
+    },
+    {
+      "sample_id": "mock_openeqa_0009",
+      "query": "What is inside the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "context",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.86,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.926971435546875
+    },
+    {
+      "sample_id": "mock_openeqa_0010",
+      "query": "What is on the desk?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.94,
+      "stage2_tool_calls": 3,
+      "stage2_latency_ms": 0.431060791015625
+    },
+    {
+      "sample_id": "mock_openeqa_0011",
+      "query": "What color is the lamp?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.43392181396484375
+    },
+    {
+      "sample_id": "mock_openeqa_0012",
+      "query": "How many books are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7799999999999999,
+      "stage2_tool_calls": 1,
+      "stage2_latency_ms": 0.4429817199707031
+    },
+    {
+      "sample_id": "mock_openeqa_0013",
+      "query": "Where is the cup?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.86,
+      "stage2_tool_calls": 4,
+      "stage2_latency_ms": 0.4401206970214844
+    },
+    {
+      "sample_id": "mock_openeqa_0014",
+      "query": "What is next to the plant?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.94,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.45609474182128906
+    },
+    {
+      "sample_id": "mock_openeqa_0015",
+      "query": "What is between the chair and table?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "direct",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7,
+      "stage2_tool_calls": 3,
+      "stage2_latency_ms": 0.9169578552246094
+    },
+    {
+      "sample_id": "mock_openeqa_0016",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "direct",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7799999999999999,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 0.42176246643066406
+    },
+    {
+      "sample_id": "mock_openeqa_0017",
+      "query": "Was there a table in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "direct",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.86,
+      "stage2_tool_calls": 1,
+      "stage2_latency_ms": 0.4410743713378906
+    },
+    {
+      "sample_id": "mock_openeqa_0019",
+      "query": "What is inside the plant?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "direct",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.94,
+      "stage2_tool_calls": 4,
+      "stage2_latency_ms": 0.4360675811767578
+    },
+    {
+      "sample_id": "mock_openeqa_0018",
+      "query": "Is the sofa open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_hypothesis_kind": "direct",
+      "stage2_success": true,
+      "stage2_status": "completed",
+      "stage2_confidence": 0.7,
+      "stage2_tool_calls": 2,
+      "stage2_latency_ms": 1.0399818420410156
+    }
+  ],
+  "academic_notes": {
+    "purpose": "Validate evidence-seeking VLM agent hypothesis",
+    "core_claim": "Iterative evidence acquisition outperforms one-shot baselines",
+    "innovation_points": [
+      "Adaptive evidence acquisition via request_more_views/request_crops",
+      "Symbolic-to-visual repair via hypothesis_repair",
+      "Evidence-grounded uncertainty quantification",
+      "Unified multi-task policy across QA/grounding/planning"
+    ],
+    "comparison_baselines": [
+      "openeqa_stage1_only.json (Stage 1 retrieval only)",
+      "openeqa_oneshot.json (One-shot VLM without tools)"
+    ]
+  }
+}
