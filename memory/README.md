@@ -7,6 +7,7 @@
 2. `memory/room0_artifact_lineage.md`
 3. `memory/query_scene_knowledge.md`
 4. `memory/bash_scripts_index.md`
+5. `memory/research_direction.md`
 
 ## 使用规则
 - 这些文件是“背景知识”，不是最终真相。

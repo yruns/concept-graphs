@@ -3,6 +3,11 @@
 ## 当前主线（2026-03-19）
 - `KeyframeSelector.select_keyframes_v2()` 是当前 query scene 主入口；虽然函数名保留 `v2`，但日志与返回 metadata 已统一标记为 `v3`。
 - parser 的 canonical structured output 是 `HypothesisOutputV1`，不再把 `GroundingQuery` 作为对外主协议。
+- 当前整体研究叙事应区分两阶段：
+  - Stage 1：`KeyframeSelector` 负责 query-conditioned keyframe retrieval
+  - Stage 2：VLM research agent 负责基于关键帧做下游任务推理
+- 目前正式跑通并稳定回归的是 Stage 1。
+- Stage 2 已从 `conceptgraph/query_scene/` 中拆出到同级目录 `conceptgraph/agents/`；`query_scene` 只保留 Stage 1 主链路与 handoff metadata。
 - 2026-03-19 本地验证通过：
   - `.venv/bin/python -m pytest conceptgraph/query_scene/tests/test_keyframe_selector_hypothesis.py conceptgraph/query_scene/tests/test_query_parser_hypothesis.py conceptgraph/query_scene/tests/test_hypothesis_output_schema.py conceptgraph/query_scene/tests/test_open_world_sample_builder.py -q`
   - 结果：`20 passed in 1.61s`
@@ -64,6 +69,27 @@
     - `requested_view_id/requested_frame_id`
     - `resolved_view_id/resolved_frame_id`
     - `path`
+- `conceptgraph/agents/`
+  - Stage 2 canonical package，与 `query_scene` 同级。
+  - 当前实现框架是 `LangChain v1 + DeepAgents`，不是自定义 agent loop。
+  - 模型初始化当前使用单 key 的 AzureOpenAI-compatible Gemini client，不走 `GeminiClientPool`。
+  - 默认 base url 应使用项目内办公网地址：`https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl`
+  - 初始化 payload 会写入：
+    - `extra_body.session_id`
+    - `extra_body.thinking.include_thoughts=True`
+    这样可以利用 provider-side prompt caching。
+  - 关键模块：
+    - `models.py`：`Stage2TaskSpec / Stage2EvidenceBundle / Stage2StructuredResponse`
+    - `adapters.py`：把 `KeyframeResult` 转成 Stage 2 evidence bundle
+    - `stage2_deep_agent.py`：DeepAgents runtime、tool layer、plan mode、subagents
+  - 当前工具主线：
+    - `inspect_stage1_metadata`
+    - `retrieve_object_context`
+    - `request_more_views`
+    - `request_crops`
+    - `switch_or_expand_hypothesis`
+  - 当前统一任务输出：
+    - `status / summary / confidence / uncertainties / cited_frame_indices / evidence_items / plan / payload`
 - `conceptgraph/query_scene/open_world_dataset.py`
   - 自动探测 `pcd_file` / `affordance_file`，构建 `scene_manifest.jsonl`。
   - 生成 deterministic `query_program_pool.jsonl`，包含 `simple` / `spatial` / `superlative` program。
@@ -89,6 +115,8 @@
 - 下面命令中的 `python`：Darwin 请替换为 `.venv/bin/python`；Linux 请先激活 `conceptgraph` conda 环境。
 - Query scene 单元回归：
   - `python -m pytest conceptgraph/query_scene/tests/test_keyframe_selector_hypothesis.py conceptgraph/query_scene/tests/test_query_parser_hypothesis.py conceptgraph/query_scene/tests/test_hypothesis_output_schema.py conceptgraph/query_scene/tests/test_open_world_sample_builder.py -q`
+- Stage 2 Agent 单测：
+  - `python -m pytest conceptgraph/agents/tests/test_stage2_deep_agent.py -q`
 - 单条查询：
   - `REPLICA_ROOT=/abs/path/to/Replica python -m conceptgraph.query_scene.examples.query_keyframes --scene_path "$REPLICA_ROOT/room0" --query "pillow on the sofa" --k 3 --llm_model gpt-5.2-2025-12-11`
 - 端到端 query 可视化：
@@ -104,3 +132,4 @@
 - `conceptgraph/query_scene/examples/simple_parse_test.py` 仍在 import 已不存在的 `SimpleQueryParser`，当前不能作为冒烟命令。
 - `conceptgraph/query_scene/examples/test_nested_query_parsing.py` 里与 `SimpleQueryParser` 相关的路径同样过时；保留的价值主要是 LLM parse 示例，不适合作为“当前回归基线”。
 - `bashes/7b_query_scene.sh` 的默认 `REPLICA_ROOT` 和 `6b` / `run_full_detect_pipeline_to_6b.sh` 不一致；建议显式设置。
+- Stage 2 的正式 Agent 化推理入口还没有接成新的 bash 包装脚本；当前主入口仍是 Python 侧 `Stage2DeepResearchAgent.run(...)`。

@@ -20,3 +20,18 @@
 - 命名：`snake_case`（函数/文件）、`PascalCase`（类）。
 - 代码风格：4 空格缩进，新增公共函数尽量加类型标注。
 - 提交建议按模块拆分：`query_scene`、`slam`、`scenegraph`、`bashes`。
+
+## 当前研究方向
+- 当前 query scene 的研究主线采用两阶段范式：
+  - Stage 1：query parsing + task-conditioned keyframe retrieval
+  - Stage 2：基于关键帧的 VLM agent 推理
+- Stage 1 的目标是把整场景压缩成任务相关视觉证据，而不是直接输出最终答案。
+- Stage 2 的目标是利用原始关键帧补足传统场景图的细粒度缺失与漏检问题，支持 QA / visual grounding / nav plan / manipulation。
+- Stage 2 的实现框架已明确为 `LangChain v1 + DeepAgents`，并从 `conceptgraph/query_scene/` 中拆出到同级目录 `conceptgraph/agents/`。
+- 当前 Stage 2 运行形态是：
+  - 统一任务输入：`Stage2TaskSpec + Stage2EvidenceBundle`
+  - 统一任务输出：`Stage2StructuredResponse`
+  - planning 强度由 `plan_mode=off|brief|full` 控制
+  - 工具层显式支持补证据与 hypothesis repair，而不是一次性多图问答
+  - Gemini 接入使用单 key 的 AzureOpenAI-compatible client，并通过 `extra_body.session_id` 打开 prompt caching
+- 该方向的长期说明记录在 `memory/research_direction.md`，后续做第二阶段相关工作时应先读取。
