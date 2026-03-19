@@ -1,75 +1,106 @@
 # Query Scene Knowledge
 
+## 当前主线（2026-03-19）
+- `KeyframeSelector.select_keyframes_v2()` 是当前 query scene 主入口；虽然函数名保留 `v2`，但日志与返回 metadata 已统一标记为 `v3`。
+- parser 的 canonical structured output 是 `HypothesisOutputV1`，不再把 `GroundingQuery` 作为对外主协议。
+- 2026-03-19 本地验证通过：
+  - `.venv/bin/python -m pytest conceptgraph/query_scene/tests/test_keyframe_selector_hypothesis.py conceptgraph/query_scene/tests/test_query_parser_hypothesis.py conceptgraph/query_scene/tests/test_hypothesis_output_schema.py conceptgraph/query_scene/tests/test_open_world_sample_builder.py -q`
+  - 结果：`20 passed in 1.61s`
+
 ## 核心模块
 - `conceptgraph/query_scene/query_structures.py`
-  - 定义 `GroundingQuery`、`QueryNode`、`SpatialConstraint`、`SelectConstraint`。
-  - 新增统一结构化输出：`HypothesisOutputV1`、`QueryHypothesis`、`HypothesisKind`、`ParseMode`。
-  - `HypothesisOutputV1` 约束：`single` 模式只能有 1 个 `direct`；`multi` 支持 `direct/proxy/context` 按 `rank` 执行。
+  - 定义嵌套查询结构：`QueryNode`、`SpatialConstraint`、`SelectConstraint`、`GroundingQuery`。
+  - 定义统一输出：`HypothesisOutputV1`、`QueryHypothesis`、`HypothesisKind`、`ParseMode`。
+  - `HypothesisOutputV1` 自带约束：
+    - `single` 只能有一个 `direct`
+    - `rank` 必须从 1 开始连续且唯一
+    - `validate_categories()` / `validate_no_mask_leak()` 用于执行前校验
 - `conceptgraph/query_scene/query_parser.py`
-  - `QueryParser`: LLM 直接输出 `HypothesisOutputV1`（2026-03-08 重构）。
-  - LLM 自行判断 `parse_mode`（SINGLE/MULTI）和假设类型（DIRECT/PROXY/CONTEXT）。
-  - 无 fallback：解析失败直接抛异常，不再有手动构建逻辑。
-  - `SimpleQueryParser` 已移除。
-  - **多模态输入支持**（2026-03-08 新增）：`parse(query, scene_images=[...])` 支持传入场景图像辅助解析。
+  - `QueryParser.parse()` 直接返回 `HypothesisOutputV1`。
+  - 会根据 `scene_categories` 动态构造 schema，允许的类别集合是 `scene_categories + UNKNOW`。
+  - 支持 `scene_images=[...]` 多模态输入；Gemini 走 JSON mode，非 Gemini 走 `with_structured_output()`。
+  - `use_pool=True` 且模型名包含 `gemini` 时，会通过 `GeminiClientPool` 做多 key 轮转和 rate-limit 重试。
 - `conceptgraph/query_scene/bev_builder.py`
-  - **新模块**（2026-03-08 新增）：可扩展的 BEV 俯视图渲染框架。
-  - `BaseBEVBuilder` 抽象基类，子类实现 `extract_annotations()` 即可支持新数据集。
-  - `ReplicaBEVBuilder` 针对 Replica 数据集，从 SceneObject 提取 centroid 和 category。
-  - `GenericBEVBuilder` 通用类，自动探测 centroid/category 字段名。
-  - `create_bev_builder(dataset)` 工厂函数，支持 "replica" / "generic"。
-  - 标签格式：`NNN: category`（如 `001: sofa`, `002: throw_pillow`）。
+  - 提供 `BaseBEVBuilder` / `ReplicaBEVBuilder` / `GenericBEVBuilder` 和工厂 `create_bev_builder()`。
+  - `ReplicaBEVBuilder` 默认输出带 object marker + label，标签格式是 `NNN: category`。
+  - 但 `KeyframeSelector` 使用的不是默认配置，而是 `ReplicaDefaultBEVConfig`：
+    - `image_size=1000`
+    - `perspective=True`
+    - `show_objects=False`
+    - `show_labels=False`
+    - 即 parser 输入是 mesh-only 无标签 BEV
 - `conceptgraph/query_scene/scene_visualizer.py`
-  - 向后兼容封装，re-export `bev_builder.py` 的类。
-  - `SceneBEVGenerator` 是 `ReplicaBEVBuilder` 的别名。
+  - 仅做向后兼容 re-export。
+  - `SceneBEVGenerator = ReplicaBEVBuilder`。
 - `conceptgraph/query_scene/query_executor.py`
-  - 递归执行查询树。
-  - 执行顺序：类别匹配 -> 属性过滤 -> 空间约束 -> 选择约束。
+  - 递归执行查询树：类别匹配 -> 属性过滤 -> 空间约束 -> 选择约束。
+  - 类别匹配顺序：exact -> substring -> CLIP fallback（若 object/text feature 可用）。
+  - 空间约束执行两阶段：
+    - quick filter：仅用于 view-independent 关系
+    - full spatial check：调用 `SpatialRelationChecker`
+  - 默认 `strict_mode=False`；若 anchor 没解析出来，直接执行时会 lenient fallback 成“保留所有 candidates”。
+- `conceptgraph/query_scene/quick_filters.py`
+  - 只给 view-independent 关系做轻量预过滤：
+    - vertical: `on/above/below`
+    - distance: `near/next_to/beside`
+  - `left_of/right_of/in_front_of/behind` 不走 quick filter。
 - `conceptgraph/query_scene/spatial_relations.py`
-  - 关系判定与评分（如 `on/near/between/inside`）。
+  - 负责 `on/near/between/inside/...` 的几何关系判定和评分。
 - `conceptgraph/query_scene/keyframe_selector.py`
-  - 加载场景对象、可见性索引、图像路径。
-  - 新流程：`parse_query_hypotheses` -> `execute_hypotheses` -> `select_keyframes_v2`。
-  - `parse_query_hypotheses(query, use_visual_context=True)` **默认启用 BEV**，调用 `parser.parse()` 获取 `HypothesisOutputV1`。
-  - `_generate_scene_images()` 调用 `ReplicaBEVBuilder` 生成 BEV 图像传给 LLM。
-  - 已删除：`_build_proxy_hypothesis`、`_build_context_hypothesis`、`_find_proxy_anchors_for_target` 等手动构建逻辑。
-  - 关键帧策略仍为 `joint_coverage` 贪心覆盖，但输入改为 `HypothesisOutputV1`。
-  - 支持 `normalize_hypothesis_output`（兼容 legacy payload）与 `to_grounding_query`（严格 `model_validate`）。
-  - 帧路径解析支持邻近视角回退，输出 `requested_*` 与 `resolved_*` 映射。
+  - 自动加载 scene objects、affordance、camera poses、sampled RGB paths、visibility index。
+  - 主流程：
+    - `parse_query_hypotheses()`
+    - `execute_hypotheses()`
+    - `select_keyframes_v2()`
+  - `parse_query_hypotheses(..., use_visual_context=True)` 默认启用 BEV，并把结果 sanitize 成“仅 scene categories 或 `UNKNOW`”。
+  - `normalize_hypothesis_output()` 兼容 legacy payload：`HypothesisOutputV1` / `GroundingQuery` / legacy dict。
+  - `execute_hypotheses()` 会按 rank 执行，但如果某个 hypothesis 的 anchor/reference 里仍含 `UNKNOW`，会直接跳过，不让 executor 的 lenient fallback 误命中。
+  - 状态值固定为：
+    - `direct_grounded`
+    - `proxy_grounded`
+    - `context_only`
+    - `no_evidence`
+  - 选帧仍使用 `joint_coverage` 贪心策略，并输出 `frame_mappings`：
+    - `requested_view_id/requested_frame_id`
+    - `resolved_view_id/resolved_frame_id`
+    - `path`
 - `conceptgraph/query_scene/open_world_dataset.py`
-  - 生成 open-world 数据构建基础资产：`scene_manifest`、`query_program_pool`。
-  - 提供类别抽取、program hash 去重、JSONL 写出工具。
+  - 自动探测 `pcd_file` / `affordance_file`，构建 `scene_manifest.jsonl`。
+  - 生成 deterministic `query_program_pool.jsonl`，包含 `simple` / `spatial` / `superlative` program。
+  - 输出 manifest 中的路径是绝对路径字符串。
 - `conceptgraph/query_scene/open_world_sample_builder.py`
-  - 从 `scene_manifest + query_program_pool` 组装 `parser_sft` 训练样本（含 direct/soft/hard 分桶）。
-  - 固定 40/30/30（direct/soft/hard）分桶采样，hard 桶执行掩蔽与泄漏校验。
-  - 支持双教师 query 生成：`TeacherQueryGenerator`（模型缓存、重试、prompt版本追踪、失败报告）。
+  - 从 manifest + program pool 生成 `parser_sft.jsonl`。
+  - 分桶固定为 `40/30/30`：`direct` / `soft` / `hard`。
+  - `hard` 桶会把 target 类别 mask 成 `UNKNOW`，并通过 `validate_no_mask_leak()` 校验。
+  - `TeacherQueryGenerator` 支持双教师 query 生成、cache、retry、`generation_report.md` 失败记录。
 
-## 执行链路（代码行为）
-1. 加载对象：优先 `scene_path/pcd_saves/*ram*_post.pkl.gz`，再 `*_post.pkl.gz`，再 `*.pkl.gz`。
-2. 可选合并 affordance：`sg_cache_detect/object_affordances.json` 或 `sg_cache/object_affordances.json`。
-3. 解析查询：`KeyframeSelector.parse_query_hypotheses` 将用户 query 解析为 `HypothesisOutputV1`。
-4. 类别净化：执行前会把不在 `scene_categories` 的类别改为 `UNKNOW`，并可做 hidden category 泄漏检查。
-5. 假设执行：`execute_hypotheses` 按 `rank` 依次执行 `direct` -> `proxy` -> `context`，返回第一个非空结果。
-6. 执行前校验：`validate_categories_in_scene` + `validate_no_mask_leak`（hard-case 防泄漏）。
-7. 状态输出：`direct_grounded` / `proxy_grounded` / `context_only` / `no_evidence`。
-8. 关键帧：依据 `object_to_views` / `view_to_objects` 选帧，默认联合覆盖多对象，并输出 `requested/resolved view/frame` 映射。
+## 当前执行链路（代码行为）
+1. `KeyframeSelector.from_scene_path()` 优先寻找 `pcd_saves/*ram*_post.pkl.gz`，其次 `*_post.pkl.gz`，最后 `*.pkl.gz`。
+2. 若存在 `sg_cache_detect/object_affordances.json` 或 `sg_cache/object_affordances.json`，会把 `object_tag/summary/category/affordances` 合并进 `SceneObject`。
+3. 若存在 `scene_path/indices/visibility_index.pkl`，直接加载；否则在线重建可见性索引。
+4. `parse_query_hypotheses()` 默认生成并缓存 `scene_path/bev/scene_bev_<hash>.png`，将其作为 parser 的 multimodal context。
+5. parser 输出 `HypothesisOutputV1` 后，`KeyframeSelector` 会把不在 scene 中的类别剔除；若节点类别全被剔空，则改成 `["UNKNOW"]`。
+6. `execute_hypotheses()` 按 rank 顺序尝试 `direct -> proxy -> context`，但会先检查 category validity / hidden leak / `UNKNOW` anchors。
+7. 选中 hypothesis 后，target objects 取最终执行结果，anchor objects 通过对 root anchors 单独执行 `_execute_node()` 收集。
+8. `select_keyframes_v2()` 用 `joint_coverage` 选择视角，并在 `results/frame%06d.jpg` 缺失时做邻近视角回退。
+9. 返回 `KeyframeResult.metadata` 时会附带完整 `hypothesis_output`、状态、选中的 hypothesis kind/rank 和 `version="v3"`。
 
-## 当前阶段状态（2026-03-08）
-1. 已完成：结构化协议、KeyframeSelector 重构、样本资产构建、40/30/30 样本组装、双教师缓存生成链路。
-2. **LLM 直接输出 HypothesisOutputV1**（2026-03-08 重构）：
-   - `QueryParser.parse()` 返回 `HypothesisOutputV1`（非 `GroundingQuery`）。
-   - LLM 自行决定 `parse_mode`（SINGLE/MULTI）和假设类型。
-   - 删除了 `keyframe_selector.py` 中的手动构建逻辑。
-3. 当前执行顺序（v4）：先做 `room0 + GPT-5.2` selector 端到端验证，再做 Qwen3 数据与训练，最后替换解析器到 Qwen3。
-4. 实网现状：双教师链路可运行且可缓存；若外网/API 不可达，会写入 `generation_report.md` 的 failure 区块并回退模板 query。
+## 当前有效命令
+- 下面命令中的 `python`：Darwin 请替换为 `.venv/bin/python`；Linux 请先激活 `conceptgraph` conda 环境。
+- Query scene 单元回归：
+  - `python -m pytest conceptgraph/query_scene/tests/test_keyframe_selector_hypothesis.py conceptgraph/query_scene/tests/test_query_parser_hypothesis.py conceptgraph/query_scene/tests/test_hypothesis_output_schema.py conceptgraph/query_scene/tests/test_open_world_sample_builder.py -q`
+- 单条查询：
+  - `REPLICA_ROOT=/abs/path/to/Replica python -m conceptgraph.query_scene.examples.query_keyframes --scene_path "$REPLICA_ROOT/room0" --query "pillow on the sofa" --k 3 --llm_model gpt-5.2-2025-12-11`
+- 端到端 query 可视化：
+  - `REPLICA_ROOT=/abs/path/to/Replica SCENE_NAME=room0 python -m conceptgraph.query_scene.examples.e2e_query_test`
+- 可见性索引：
+  - `REPLICA_ROOT=/abs/path/to/Replica bash bashes/6b_build_visibility_index.sh room0`
+- Open-world 资产构建：
+  - `python conceptgraph/scripts/build_open_world_dataset_assets.py --scene room0=/abs/path/to/room0 --output_dir plans/generated_open_world`
+  - `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world --samples_per_scene 300`
+  - `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world_teacher --samples_per_scene 300 --use_teacher_llm --teacher_models gpt-5.2-2025-12-11,gemini-3-pro-preview-new --teacher_max_retries 2`
 
-## 开发与回归命令
-- `python -m conceptgraph.query_scene.examples.simple_parse_test`
-- `python -m conceptgraph.query_scene.examples.test_nested_query_parsing --llm_model gpt-5.2-2025-12-11`
-- `bash bashes/6b_build_visibility_index.sh room0`
-- `bash bashes/7b_query_scene.sh room0 "pillow on the sofa" 3`
-- `bash bashes/run_e2e_query_test.sh`
-- `python conceptgraph/scripts/build_open_world_dataset_assets.py --scene room0=/abs/path/to/room0 --output_dir plans/generated_open_world`
-- `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world --samples_per_scene 300`
-- `python conceptgraph/scripts/build_open_world_samples.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_program_pool plans/generated_open_world/query_program_pool.jsonl --output_dir plans/generated_open_world_teacher --samples_per_scene 300 --use_teacher_llm --teacher_models gpt-5.2-2025-12-11,gemini-3-pro-preview-new --teacher_max_retries 2`
-- 下一步（数据工程）建议命令：
-  - `python conceptgraph/scripts/build_open_world_splits.py --scene_manifest plans/generated_open_world/scene_manifest.jsonl --query_pool plans/generated_open_world/query_program_pool.jsonl --output plans/generated_open_world/split_manifest.json`
+## 遗留/过时项
+- `conceptgraph/query_scene/examples/simple_parse_test.py` 仍在 import 已不存在的 `SimpleQueryParser`，当前不能作为冒烟命令。
+- `conceptgraph/query_scene/examples/test_nested_query_parsing.py` 里与 `SimpleQueryParser` 相关的路径同样过时；保留的价值主要是 LLM parse 示例，不适合作为“当前回归基线”。
+- `bashes/7b_query_scene.sh` 的默认 `REPLICA_ROOT` 和 `6b` / `run_full_detect_pipeline_to_6b.sh` 不一致；建议显式设置。

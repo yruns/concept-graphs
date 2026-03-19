@@ -59,10 +59,21 @@
   - `object_to_views` 与 `view_to_objects` 双向索引 + `metadata`（stride、对象数、映射数等）。
   - `metadata.scene_path / metadata.pcd_file` 为相对 `REPLICA_ROOT` 的相对路径。
 
-## 6) Query / 可视化实验输出
+## 6) Query Scene 可视化上下文缓存
+- `room0/bev/scene_bev_<config-hash>.png`
+  来源：`conceptgraph/query_scene/keyframe_selector.py::_generate_scene_images()` 在 `parse_query_hypotheses(..., use_visual_context=True)` 时懒生成并缓存。  
+  内容：`ReplicaDefaultBEVConfig` 生成的 1000x1000 俯视图，默认是 perspective + mesh-only，无 object marker / label，供多模态 parser 使用。
+
+## 7) Query / 可视化实验输出
+- `room0/query_results/*.jpg`  
+  来源：`bash bashes/7b_query_scene.sh room0 "pillow on the sofa" 3`，底层调用 `conceptgraph/query_scene/examples/query_keyframes.py`。  
+  内容：按 query 输出的关键帧拼图；目录默认是 `scene_path/query_results/`。
 - `room0/vis_index_debug/`  
   来源：`python -m conceptgraph.query_scene.examples.visualize_visibility_index`。  
   内容：对象-视角 TopK 可视化图、标注图、局部/全局 PLY。
 - `room0/query_visualizations_base/`、`room0/query_visualizations_improved/`、`room0/query_visualizations_mutlicategory/`  
   来源：`conceptgraph/query_scene/examples/e2e_query_test.py` 的多轮实验结果归档（默认脚本输出名是 `query_visualizations/`，这里是对比实验的分组目录）。  
   内容：每个 query 子目录含 `00_initial_candidates.ply`、`01_final_candidates.ply`、`final_combined.ply`、`color_legend.txt`、`keyframes/*.jpg`；根目录含 `test_results.json`。
+- `room0/query_visualizations/`
+  来源：直接运行 `conceptgraph/query_scene/examples/e2e_query_test.py`。  
+  内容：当前默认端到端 query scene 可视化输出目录；结构与上面的归档目录相同。

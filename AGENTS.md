@@ -18,14 +18,16 @@
 - Bash 脚本索引：`memory/bash_scripts_index.md`
 
 ## Fast Commands
-- Query Scene 解析冒烟：
-  - `python -m conceptgraph.query_scene.examples.simple_parse_test`
-  - `python -m conceptgraph.query_scene.examples.test_nested_query_parsing --llm_model gpt-5.2-2025-12-11`
+- 下列命令中的 `python`：Darwin 请替换为 `.venv/bin/python`；Linux 请先激活 `conceptgraph` conda 环境。
+- Query Scene 单元回归：
+  - `python -m pytest conceptgraph/query_scene/tests/test_keyframe_selector_hypothesis.py conceptgraph/query_scene/tests/test_query_parser_hypothesis.py conceptgraph/query_scene/tests/test_hypothesis_output_schema.py conceptgraph/query_scene/tests/test_open_world_sample_builder.py -q`
+- Query Scene 单条查询：
+  - `REPLICA_ROOT=/abs/path/to/Replica python -m conceptgraph.query_scene.examples.query_keyframes --scene_path "$REPLICA_ROOT/room0" --query "pillow on the sofa" --k 3 --llm_model gpt-5.2-2025-12-11`
 - Query Scene 端到端：
-  - `bash bashes/run_e2e_query_test.sh`
-- 查询关键帧：
-  - `bash bashes/6b_build_visibility_index.sh room0`
-  - `bash bashes/7b_query_scene.sh room0 "pillow on the sofa" 3`
+  - `REPLICA_ROOT=/abs/path/to/Replica SCENE_NAME=room0 python -m conceptgraph.query_scene.examples.e2e_query_test`
+- 查询关键帧预处理：
+  - `REPLICA_ROOT=/abs/path/to/Replica bash bashes/6b_build_visibility_index.sh room0`
+  - `REPLICA_ROOT=/abs/path/to/Replica bash bashes/7b_query_scene.sh room0 "pillow on the sofa" 3`
 
 ## Python Environment (Required)
 - **检测系统**：先执行 `uname -s` 判断当前 OS
@@ -38,6 +40,13 @@
   source ~/miniconda3/etc/profile.d/conda.sh && conda activate conceptgraph
   python -m conceptgraph.query_scene.examples.e2e_query_test
   ```
+
+## Query Scene Notes
+- 当前 query parser 的对外协议是 `HypothesisOutputV1`，主入口是 `KeyframeSelector.select_keyframes_v2()`；返回 metadata 中版本号仍写作 `v3`。
+- `KeyframeSelector.parse_query_hypotheses()` 默认会生成 `scene_path/bev/scene_bev_<hash>.png` 作为多模态输入；该图使用 `ReplicaDefaultBEVConfig`，是 mesh-only、无 object marker/label 的 BEV。
+- `conceptgraph/query_scene/examples/simple_parse_test.py` 以及 `conceptgraph/query_scene/examples/test_nested_query_parsing.py` 中的 `SimpleQueryParser` 分支已过时；当前源码里不存在 `SimpleQueryParser`，不要把它们当作冒烟命令。
+- `bashes/6b_build_visibility_index.sh`、`bashes/7b_query_scene.sh`、`bashes/run_e2e_query_test.sh` 目前仍是 Linux/conda 风格脚本，没有统一适配 `.venv`。
+- `bashes/7b_query_scene.sh` 的默认 `REPLICA_ROOT` 是 `$HOME/Datasets/Replica/Replica`，与 `6b`/`run_full_detect_pipeline_to_6b.sh` 的 `$HOME/Datasets/Replica` 不一致；运行 query scene bash 脚本前请显式导出 `REPLICA_ROOT`。
 
 ## Working Conventions
 - Python 4 空格缩进，命名采用 `snake_case` / `PascalCase`。

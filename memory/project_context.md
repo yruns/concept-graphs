@@ -7,9 +7,13 @@
 - `Grounded-Segment-Anything/`, `gradslam/`, `chamferdist/`: 依赖代码树（修改需谨慎）。
 
 ## 环境与配置
-- 推荐 Python 3.10 + conda 环境 `conceptgraph`。
+- Python 入口按 OS 区分：macOS (Darwin) 使用项目根目录 `.venv`，Linux 使用 conda 环境 `conceptgraph`。
 - 本地路径/密钥通过 `env_vars.bash` 管理（由 `env_vars.bash.template` 复制）。
 - 常见变量：`REPLICA_ROOT`, `GSA_PATH`, `LLM_BASE_URL`, `LLM_MODEL`。
+- query scene 相关 bash 包装脚本目前并不完全统一：
+  - `bashes/run_full_detect_pipeline_to_6b.sh` 会 source `env_vars.bash`。
+  - `bashes/6b_build_visibility_index.sh`、`bashes/7b_query_scene.sh`、`bashes/run_e2e_query_test.sh` 仍直接使用 conda/裸 `python`，在 Darwin 上更稳妥的方式是直接用 `.venv/bin/python -m ...` 运行模块。
+- `bashes/7b_query_scene.sh` 的默认 `REPLICA_ROOT` 为 `$HOME/Datasets/Replica/Replica`，与 `6b`/`run_full_detect_pipeline_to_6b.sh` 使用的 `$HOME/Datasets/Replica` 不一致，建议显式设置。
 - 路径策略（2026-03-08 起）：`2b/6b` 产物禁止写入绝对路径；`pcd_saves/*.pkl.gz` 与 `indices/visibility_index.pkl` 中路径字段统一使用相对 `REPLICA_ROOT` 的相对路径。
 
 ## 贡献约定（简）
