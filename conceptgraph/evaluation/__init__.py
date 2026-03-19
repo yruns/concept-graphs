@@ -16,10 +16,30 @@ from .batch_eval import (
     EvalSampleResult,
     EvalRunResult,
 )
+from .metrics import (
+    BenchmarkMetrics,
+    AblationGroup,
+    AggregatedResults,
+    aggregate_run_result,
+    aggregate_multiple_runs,
+    export_to_latex_table,
+    export_tool_usage_table,
+    export_summary_statistics,
+)
 
 __all__ = [
+    # Batch evaluation
     "BatchEvalConfig",
     "BatchEvaluator",
     "EvalSampleResult",
     "EvalRunResult",
+    # Metrics aggregation
+    "BenchmarkMetrics",
+    "AblationGroup",
+    "AggregatedResults",
+    "aggregate_run_result",
+    "aggregate_multiple_runs",
+    "export_to_latex_table",
+    "export_tool_usage_table",
+    "export_summary_statistics",
 ]

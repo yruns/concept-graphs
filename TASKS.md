@@ -118,12 +118,14 @@
     - [x] Progress tracking and resumption
     - [x] Output structured results JSON
 
-- [ ] TASK-021: Implement metrics aggregation | Priority: 1 | Est: 2h
+- [x] TASK-021: Implement metrics aggregation | Priority: 1 | Est: 2h
   - File: `conceptgraph/evaluation/metrics.py`
+  - Tests: `conceptgraph/evaluation/tests/test_metrics.py` (56 tests passing)
+  - Status: Complete with BenchmarkMetrics, AblationGroup, aggregate functions, LaTeX export
   - Acceptance:
-    - [ ] Aggregate per-benchmark metrics
-    - [ ] Support ablation grouping
-    - [ ] Export to LaTeX tables
+    - [x] Aggregate per-benchmark metrics
+    - [x] Support ablation grouping
+    - [x] Export to LaTeX tables
 
 - [ ] TASK-022: Create ablation configuration system | Priority: 2 | Est: 2h
   - File: `conceptgraph/evaluation/ablation_config.py`
@@ -204,7 +206,7 @@
 - [x] TASK-010: Implement request_crops tool backend (32 tests)
 - [x] TASK-011: Implement switch_or_expand_hypothesis tool (41 tests)
 - [x] TASK-013: Implement uncertainty-aware stopping (tests in stage2_deep_agent tests)
-- [x] TASK-020: Build batch evaluation script (33 tests)
+- [x] TASK-021: Implement metrics aggregation (56 tests)
 
 ---
 
