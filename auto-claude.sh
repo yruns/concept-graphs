@@ -1,149 +1,573 @@
 #!/bin/bash
-# auto-claude.sh - Automated iterative improvement for Keyframe Selector
+# auto-claude.sh - Autonomous Research Loop with Worker + Reviewer Pattern
 #
-# This script runs Claude Code in a loop to iteratively improve the
-# keyframe selector based on TODO.md tasks.
+# Architecture:
+#   1. Task Selector: Picks next pending task from TASKS.md
+#   2. Worker Agent: Implements the task (code/research)
+#   3. Reviewer Agent: Reviews changes, provides critique
+#   4. Research Explorer: Periodically searches for new academic insights
+#   5. Task Updater: Marks tasks complete, logs progress
 #
 # Usage:
 #   chmod +x auto-claude.sh
-#   ./auto-claude.sh
+#   ./auto-claude.sh              # Interactive mode
+#   ./auto-claude.sh --daemon     # Background daemon mode
+#   ./auto-claude.sh --dry-run    # Show what would happen
+#
+# Configuration via environment:
+#   MAX_ITERATIONS=50              # Maximum iterations (default: 50)
+#   RESEARCH_INTERVAL=5            # Run research explorer every N iterations
+#   REVIEW_THRESHOLD=medium        # When to trigger review: always/medium/major
+#   MODEL=claude-opus-4-5          # Model to use
 
-set -e
+set -euo pipefail
 
-# Configuration
-MAX_ITERATIONS=20           # Maximum iterations
-SLEEP_BETWEEN=1             # Seconds between iterations
-LOG_FILE="results/auto-claude.log"
+# ════════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION
+# ════════════════════════════════════════════════════════════════════════════════
+
+MAX_ITERATIONS="${MAX_ITERATIONS:-50}"
+RESEARCH_INTERVAL="${RESEARCH_INTERVAL:-5}"
+REVIEW_THRESHOLD="${REVIEW_THRESHOLD:-medium}"
+MODEL="${MODEL:-claude-opus-4-5}"
+SLEEP_BETWEEN=3
+DRY_RUN=false
+DAEMON_MODE=false
+
+# File paths
+TASKS_FILE="TASKS.md"
 TODO_FILE="TODO.md"
+LOG_DIR="results/auto-claude"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+SESSION_LOG="$LOG_DIR/session_$TIMESTAMP.log"
+WORKER_LOG="$LOG_DIR/worker_$TIMESTAMP.log"
+REVIEWER_LOG="$LOG_DIR/reviewer_$TIMESTAMP.log"
+RESEARCH_LOG="$LOG_DIR/research_$TIMESTAMP.log"
+STATE_FILE="$LOG_DIR/.state.json"
 
-# Colors for output
+# Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m'
 
-# Initialize
-mkdir -p results
-echo "=== Auto-Claude Started at $(date) ===" | tee -a "$LOG_FILE"
+# ════════════════════════════════════════════════════════════════════════════════
+# ARGUMENT PARSING
+# ════════════════════════════════════════════════════════════════════════════════
 
-# Check if TODO.md exists
-if [ ! -f "$TODO_FILE" ]; then
-    echo -e "${RED}Error: $TODO_FILE not found${NC}"
-    exit 1
-fi
-
-# Check if there are pending tasks
-has_pending_tasks() {
-    grep -q "\- \[ \]" "$TODO_FILE"
-}
-
-# Get current pass rate from latest test results
-get_pass_rate() {
-    if [ -f "/Users/bytedance/Replica/room0/query_visualizations/test_results.json" ]; then
-        .venv/bin/python -c "
-import json
-with open('/Users/bytedance/Replica/room0/query_visualizations/test_results.json') as f:
-    data = json.load(f)
-passed = sum(1 for r in data if r.get('matched_objects'))
-total = len(data)
-print(f'{passed}/{total}')
-"
-    else
-        echo "N/A"
-    fi
-}
-
-# Main loop
-iteration=0
-while [ $iteration -lt $MAX_ITERATIONS ]; do
-    iteration=$((iteration + 1))
-    echo ""
-    echo -e "${YELLOW}=== Iteration $iteration / $MAX_ITERATIONS ===${NC}" | tee -a "$LOG_FILE"
-    echo "Time: $(date)" | tee -a "$LOG_FILE"
-
-    # Check if there are remaining tasks
-    if ! has_pending_tasks; then
-        echo -e "${GREEN}All tasks completed!${NC}" | tee -a "$LOG_FILE"
-        break
-    fi
-
-    # Show current pass rate
-    current_rate=$(get_pass_rate)
-    echo "Current pass rate: $current_rate" | tee -a "$LOG_FILE"
-
-    # Build prompt
-    PROMPT=$(cat << 'PROMPT_EOF'
-你正在执行 Keyframe Selector 改进任务的自动化迭代。
-
-请查看 TODO.md，选择第一个未完成的任务（标记为 - [ ]）。
-
-执行流程：
-1. 阅读当前任务描述
-2. 执行任务（分析/实现/测试）
-3. 将结果记录到 results/ 目录下的对应文件
-4. 如果是代码改动，运行 e2e 测试验证效果：
-   REPLICA_ROOT=/Users/bytedance/Replica SCENE_NAME=room0 .venv/bin/python -m conceptgraph.query_scene.examples.e2e_query_test
-5. 更新 TODO.md：
-   - 将完成的任务标记为 - [x]
-   - 移动到 Completed 区域
-   - 更新 Results Log 表格
-6. 如果发现新问题，添加新任务到 Pending
-
-重要：
-- 每次只完成一个任务
-- 必须记录改动前后的 pass rate 对比
-- 目标：通过率达到 98%+ (至少 58/59)
-- 当前 baseline: 57/59 (96.6%)
-- 使用 .venv/bin/python 运行 Python
-
-当前 TODO.md 内容：
-PROMPT_EOF
-)
-    PROMPT="${PROMPT}
-$(cat TODO.md)"
-
-    # Execute Claude Code via ttadk with prompt piped through stdin
-    echo "$PROMPT" | ttadk code --model claude-opus-4-5 -a "--dangerously-skip-permissions --print --output-format stream-json" 2>&1 | tee -a "$LOG_FILE"
-    exit_code=${PIPESTATUS[1]}
-
-    # Check Claude exit status
-    if [ $exit_code -ne 0 ]; then
-        echo -e "${RED}Claude exited with error code $exit_code${NC}" | tee -a "$LOG_FILE"
-        echo "Waiting 30 seconds before retry..." | tee -a "$LOG_FILE"
-        sleep 30
-        continue
-    fi
-
-    # Get new pass rate
-    new_rate=$(get_pass_rate)
-    echo "New pass rate: $new_rate" | tee -a "$LOG_FILE"
-
-    # Auto-commit if there are changes
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "Committing changes..." | tee -a "$LOG_FILE"
-        git add -A
-        git commit -m "auto(selector): iteration $iteration - pass rate $new_rate
-
-Changes from automated improvement iteration.
-See results/auto-claude.log for details.
-
-Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>"
-    fi
-
-    # Check if we've reached the target
-    passed=$(echo "$new_rate" | cut -d'/' -f1)
-    total=$(echo "$new_rate" | cut -d'/' -f2)
-    if [ "$passed" = "$total" ] || [ "$passed" -ge 58 ]; then
-        echo -e "${GREEN}Target achieved! Pass rate: $new_rate${NC}" | tee -a "$LOG_FILE"
-        break
-    fi
-
-    echo "Waiting ${SLEEP_BETWEEN} seconds..." | tee -a "$LOG_FILE"
-    sleep $SLEEP_BETWEEN
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --daemon)
+            DAEMON_MODE=true
+            shift
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --max-iterations)
+            MAX_ITERATIONS="$2"
+            shift 2
+            ;;
+        --help)
+            echo "Usage: $0 [--daemon] [--dry-run] [--max-iterations N]"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
 done
 
-echo ""
-echo "=== Auto-Claude Finished at $(date) ===" | tee -a "$LOG_FILE"
-echo "Final pass rate: $(get_pass_rate)" | tee -a "$LOG_FILE"
-echo "Total iterations: $iteration" | tee -a "$LOG_FILE"
+# ════════════════════════════════════════════════════════════════════════════════
+# INITIALIZATION
+# ════════════════════════════════════════════════════════════════════════════════
+
+mkdir -p "$LOG_DIR"
+
+log() {
+    local level="$1"
+    local msg="$2"
+    local color=""
+    case $level in
+        INFO)  color="$BLUE" ;;
+        WARN)  color="$YELLOW" ;;
+        ERROR) color="$RED" ;;
+        OK)    color="$GREEN" ;;
+        WORK)  color="$CYAN" ;;
+        REV)   color="$MAGENTA" ;;
+    esac
+    echo -e "${color}[$level]${NC} $(date '+%H:%M:%S') $msg" | tee -a "$SESSION_LOG"
+}
+
+check_prerequisites() {
+    if [ ! -f "$TASKS_FILE" ]; then
+        log ERROR "TASKS.md not found. Please create it first."
+        exit 1
+    fi
+    if ! command -v ttadk &> /dev/null; then
+        log ERROR "ttadk command not found. Please install it."
+        exit 1
+    fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TASK MANAGEMENT
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Get next pending task (returns TASK-XXX or empty)
+get_next_task() {
+    # Find first "- [ ] TASK-" line and extract task ID
+    grep -m1 '^\- \[ \] TASK-[0-9]\+' "$TASKS_FILE" | sed -E 's/.*TASK-([0-9]+).*/TASK-\1/' || echo ""
+}
+
+# Get task details
+get_task_details() {
+    local task_id="$1"
+    # Extract everything from the task line until next task or section
+    awk "/$task_id/,/^- \[|^##|^---/" "$TASKS_FILE" | head -n -1
+}
+
+# Check if task has unmet dependencies
+check_dependencies() {
+    local task_id="$1"
+    local deps=$(grep -A5 "$task_id" "$TASKS_FILE" | grep "Depends:" | sed 's/.*Depends: //')
+
+    if [ -z "$deps" ] || [ "$deps" = "None" ]; then
+        return 0  # No dependencies
+    fi
+
+    # Check each dependency
+    for dep in $(echo "$deps" | tr ',' ' '); do
+        dep=$(echo "$dep" | xargs)  # Trim whitespace
+        if grep -q "\[ \] $dep" "$TASKS_FILE"; then
+            log WARN "Task $task_id blocked by incomplete dependency: $dep"
+            return 1
+        fi
+    done
+    return 0
+}
+
+# Mark task as in progress
+mark_in_progress() {
+    local task_id="$1"
+    sed -i '' "s/^\- \[ \] $task_id/- [~] $task_id/" "$TASKS_FILE"
+}
+
+# Mark task as complete
+mark_complete() {
+    local task_id="$1"
+    sed -i '' "s/^\- \[.\] $task_id/- [x] $task_id/" "$TASKS_FILE"
+}
+
+# Mark task as needs review
+mark_needs_review() {
+    local task_id="$1"
+    sed -i '' "s/^\- \[.\] $task_id/- [?] $task_id/" "$TASKS_FILE"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# CLAUDE EXECUTION
+# ════════════════════════════════════════════════════════════════════════════════
+
+run_claude() {
+    local prompt="$1"
+    local log_file="$2"
+    local timeout="${3:-600}"  # 10 minute default timeout
+
+    if [ "$DRY_RUN" = true ]; then
+        log INFO "[DRY-RUN] Would execute Claude with prompt (${#prompt} chars)"
+        echo "$prompt" | head -c 500
+        echo "..."
+        return 0
+    fi
+
+    # Execute with timeout
+    echo "$prompt" | timeout "$timeout" ttadk code --model "$MODEL" \
+        -a "--dangerously-skip-permissions --print --output-format stream-json" \
+        2>&1 | tee -a "$log_file"
+
+    return ${PIPESTATUS[1]}
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# WORKER AGENT
+# ════════════════════════════════════════════════════════════════════════════════
+
+run_worker() {
+    local task_id="$1"
+    local task_details="$2"
+
+    log WORK "Worker starting task: $task_id"
+
+    local prompt=$(cat << WORKER_PROMPT
+# 🔧 Worker Agent: Execute Research Task
+
+You are the **Worker Agent** in an autonomous research loop for the **Two-Stage 3D Scene Understanding** project.
+
+## Your Current Task
+\`\`\`
+$task_details
+\`\`\`
+
+## Project Context
+
+This project implements a two-stage framework:
+- **Stage 1**: Task-conditioned keyframe retrieval from 3D scene graphs
+- **Stage 2**: VLM agentic reasoning over retrieved visual evidence
+
+Academic innovation points:
+1. Adaptive Evidence Acquisition (VLM decides when to request more evidence)
+2. Symbolic-to-Visual Repair (Stage 2 validates/corrects Stage 1 hypotheses)
+3. Evidence-Grounded Uncertainty (explicit uncertainty output)
+4. Unified Multi-Task Policy (QA, grounding, navigation, manipulation)
+
+## Execution Guidelines
+
+1. **Read first**: Review relevant existing code before writing
+2. **Small changes**: Make incremental, testable changes
+3. **Test everything**: Run unit tests after each change
+4. **Document**: Add docstrings and type hints
+5. **Format**: Use \`.venv/bin/python -m black <file>\` to format
+
+## Commands Reference
+- Run tests: \`.venv/bin/python -m pytest <test_file> -v\`
+- Format code: \`.venv/bin/python -m black <file>\`
+- Stage 2 agent tests: \`.venv/bin/python -m pytest conceptgraph/agents/tests/test_stage2_deep_agent.py -q\`
+- Benchmark tests: \`.venv/bin/python -m pytest conceptgraph/benchmarks/tests/ -v\`
+
+## Important Files
+- Research direction: \`memory/research_direction.md\`
+- TODO overview: \`TODO.md\`
+- Task tracking: \`TASKS.md\`
+- Stage 2 design: \`docs/stage2_vlm_agent_design.md\`
+
+## Output Requirements
+
+When done, output a brief summary:
+\`\`\`
+## Task $task_id Summary
+- Status: DONE | PARTIAL | BLOCKED
+- Files changed: <list>
+- Tests: <passed/total>
+- Notes: <any issues or follow-ups>
+\`\`\`
+
+Now execute task $task_id. Focus on quality and correctness.
+WORKER_PROMPT
+)
+
+    run_claude "$prompt" "$WORKER_LOG" 900
+    return $?
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# REVIEWER AGENT
+# ════════════════════════════════════════════════════════════════════════════════
+
+run_reviewer() {
+    local task_id="$1"
+
+    log REV "Reviewer analyzing changes for: $task_id"
+
+    # Get git diff
+    local git_diff=$(git diff --cached --stat 2>/dev/null || git diff --stat 2>/dev/null || echo "No changes detected")
+    local git_diff_full=$(git diff --cached 2>/dev/null || git diff 2>/dev/null | head -500)
+
+    local prompt=$(cat << REVIEWER_PROMPT
+# 🔍 Reviewer Agent: Code Review & Academic Alignment
+
+You are the **Reviewer Agent** in an autonomous research loop. Your job is to:
+1. Review code changes for quality and correctness
+2. Check alignment with research goals
+3. Suggest improvements
+
+## Changes to Review (Task: $task_id)
+
+### Git Diff Summary
+\`\`\`
+$git_diff
+\`\`\`
+
+### Detailed Changes (truncated)
+\`\`\`diff
+$git_diff_full
+\`\`\`
+
+## Review Criteria
+
+### Code Quality (Score 1-10)
+- [ ] Follows Python best practices
+- [ ] Has proper type hints
+- [ ] Has docstrings
+- [ ] No hardcoded values
+- [ ] Error handling present
+- [ ] Tests included
+
+### Research Alignment (Score 1-10)
+- [ ] Supports academic innovation claims
+- [ ] Follows two-stage paradigm correctly
+- [ ] Consistent with Stage 2 agent design
+- [ ] Enables benchmark evaluation
+
+### Suggestions
+- List specific improvements
+- Flag any issues that need fixing
+- Note if task should be marked complete or needs more work
+
+## Output Format
+
+\`\`\`json
+{
+  "task_id": "$task_id",
+  "code_quality_score": <1-10>,
+  "research_alignment_score": <1-10>,
+  "overall_verdict": "APPROVE" | "REQUEST_CHANGES" | "NEEDS_DISCUSSION",
+  "issues": ["issue1", "issue2"],
+  "suggestions": ["suggestion1", "suggestion2"],
+  "should_commit": true | false
+}
+\`\`\`
+
+Be constructive but rigorous. Our goal is publishable research.
+REVIEWER_PROMPT
+)
+
+    run_claude "$prompt" "$REVIEWER_LOG" 300
+    return $?
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# RESEARCH EXPLORER AGENT
+# ════════════════════════════════════════════════════════════════════════════════
+
+run_research_explorer() {
+    log INFO "🔬 Research Explorer: Searching for new academic insights..."
+
+    local prompt=$(cat << RESEARCH_PROMPT
+# 🎓 Research Explorer Agent: Academic Insight Discovery
+
+You are the **Research Explorer** in an autonomous research loop. Your mission:
+1. Search for latest papers relevant to our research
+2. Identify potential academic contributions we're missing
+3. Find comparison baselines and benchmarks
+
+## Our Research Direction
+
+**Title**: Two-Stage Framework for 3D Scene Understanding with Evidence-Seeking VLM Agents
+
+**Core Claims**:
+1. VLM agents that dynamically request evidence outperform one-shot baselines
+2. Visual repair can correct scene graph detection failures
+3. Explicit uncertainty reduces hallucination
+4. Unified multi-task policy (QA, grounding, navigation, manipulation)
+
+**Target Venues**: CVPR, ICCV, NeurIPS, ICLR, ECCV 2025-2026
+
+## Search Tasks
+
+Use the Agent tool with subagent_type="Explore" or WebSearch to:
+
+1. **Competitor Analysis**: Search for recent papers on:
+   - "3D scene graph + LLM reasoning 2024 2025"
+   - "VLM agent embodied QA"
+   - "iterative visual reasoning benchmark"
+
+2. **Benchmark Updates**: Check for:
+   - New EQA/VQA benchmarks released in 2025
+   - Updated SOTA results on OpenEQA, SQA3D, ScanRefer
+   - New evaluation metrics being adopted
+
+3. **Method Gaps**: Look for:
+   - What existing methods don't address
+   - Common failure modes in recent papers
+   - Under-explored research directions
+
+## Output Format
+
+\`\`\`markdown
+## Research Insights Report
+
+### New Related Work
+- [Paper Title](url) - Venue 2025
+  - Relevance: <how it relates to us>
+  - Differentiation: <how we differ>
+
+### Updated Benchmarks
+- <benchmark name>: New SOTA is X% by <method>
+
+### Identified Gaps
+- Gap 1: <description> → Opportunity: <what we can do>
+
+### Recommended Actions
+1. <action item for TASKS.md>
+\`\`\`
+
+Search now and report findings.
+RESEARCH_PROMPT
+)
+
+    run_claude "$prompt" "$RESEARCH_LOG" 600
+    return $?
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# GIT OPERATIONS
+# ════════════════════════════════════════════════════════════════════════════════
+
+auto_commit() {
+    local task_id="$1"
+    local commit_type="${2:-feat}"
+
+    if [ -z "$(git status --porcelain)" ]; then
+        log INFO "No changes to commit"
+        return 0
+    fi
+
+    git add -A
+
+    # Generate commit message
+    local files_changed=$(git diff --cached --name-only | wc -l | xargs)
+    local commit_msg="$commit_type(research): $task_id - automated implementation
+
+Files changed: $files_changed
+Session: $TIMESTAMP
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+Co-Authored-By: TTADK <ttadk@bytedance.com>"
+
+    git commit -m "$commit_msg"
+    log OK "Committed changes for $task_id"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# MAIN LOOP
+# ════════════════════════════════════════════════════════════════════════════════
+
+main() {
+    log INFO "════════════════════════════════════════════════════════════"
+    log INFO "  Auto-Claude Research Loop Started"
+    log INFO "  Model: $MODEL | Max Iterations: $MAX_ITERATIONS"
+    log INFO "  Session: $TIMESTAMP"
+    log INFO "════════════════════════════════════════════════════════════"
+
+    check_prerequisites
+
+    local iteration=0
+    local consecutive_failures=0
+    local max_failures=3
+
+    while [ $iteration -lt $MAX_ITERATIONS ]; do
+        iteration=$((iteration + 1))
+
+        echo ""
+        log INFO "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        log INFO "  Iteration $iteration / $MAX_ITERATIONS"
+        log INFO "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 1: Get next task
+        # ─────────────────────────────────────────────────────────────────────
+        local task_id=$(get_next_task)
+
+        if [ -z "$task_id" ]; then
+            log OK "🎉 All tasks completed! Research loop finished."
+            break
+        fi
+
+        # Check dependencies
+        if ! check_dependencies "$task_id"; then
+            log WARN "Skipping $task_id due to unmet dependencies"
+            # Mark as blocked and try next
+            sed -i '' "s/^\- \[ \] $task_id/- [!] $task_id/" "$TASKS_FILE"
+            continue
+        fi
+
+        local task_details=$(get_task_details "$task_id")
+        log INFO "Selected task: $task_id"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 2: Run Worker Agent
+        # ─────────────────────────────────────────────────────────────────────
+        mark_in_progress "$task_id"
+
+        if ! run_worker "$task_id" "$task_details"; then
+            log ERROR "Worker failed for $task_id"
+            consecutive_failures=$((consecutive_failures + 1))
+
+            if [ $consecutive_failures -ge $max_failures ]; then
+                log ERROR "Too many consecutive failures. Stopping."
+                exit 1
+            fi
+
+            log WARN "Waiting 30s before retry..."
+            sleep 30
+            mark_needs_review "$task_id"
+            continue
+        fi
+
+        consecutive_failures=0
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 3: Run Reviewer Agent (if changes exist)
+        # ─────────────────────────────────────────────────────────────────────
+        if [ -n "$(git status --porcelain)" ]; then
+            if ! run_reviewer "$task_id"; then
+                log WARN "Reviewer had issues, but continuing..."
+            fi
+
+            # Auto-commit (reviewer feedback is informational for now)
+            auto_commit "$task_id" "feat"
+        fi
+
+        # Mark task complete
+        mark_complete "$task_id"
+        log OK "✓ Task $task_id completed"
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 4: Periodic Research Explorer
+        # ─────────────────────────────────────────────────────────────────────
+        if [ $((iteration % RESEARCH_INTERVAL)) -eq 0 ]; then
+            run_research_explorer || log WARN "Research explorer failed, continuing..."
+        fi
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Step 5: Brief pause
+        # ─────────────────────────────────────────────────────────────────────
+        log INFO "Sleeping ${SLEEP_BETWEEN}s before next iteration..."
+        sleep $SLEEP_BETWEEN
+
+    done
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Final Summary
+    # ─────────────────────────────────────────────────────────────────────────
+    echo ""
+    log INFO "════════════════════════════════════════════════════════════"
+    log INFO "  Session Complete"
+    log INFO "  Total iterations: $iteration"
+    log INFO "  Logs: $LOG_DIR/"
+    log INFO "════════════════════════════════════════════════════════════"
+
+    # Show remaining tasks
+    local remaining=$(grep -c '^\- \[ \]' "$TASKS_FILE" 2>/dev/null || echo "0")
+    local completed=$(grep -c '^\- \[x\]' "$TASKS_FILE" 2>/dev/null || echo "0")
+    log INFO "Tasks: $completed completed, $remaining remaining"
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ════════════════════════════════════════════════════════════════════════════════
+
+if [ "$DAEMON_MODE" = true ]; then
+    log INFO "Starting in daemon mode..."
+    nohup "$0" > "$LOG_DIR/daemon.log" 2>&1 &
+    echo "Daemon started with PID $!"
+    exit 0
+fi
+
+main "$@"
