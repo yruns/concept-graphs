@@ -71,14 +71,15 @@
 
 ### Tool Implementation
 
-- [~] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
+- [x] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
   - File: `conceptgraph/agents/tools/request_crops.py`
+  - Tests: `conceptgraph/agents/tools/tests/test_request_crops.py` (32 tests passing)
   - Depends: Stage 1 object detection output
   - Acceptance:
-    - [ ] Crop objects from keyframes using bounding boxes
-    - [ ] Support multiple crop requests in single call
-    - [ ] Return cropped images with metadata
-    - [ ] Unit tests
+    - [x] Crop objects from keyframes using bounding boxes
+    - [x] Support multiple crop requests in single call
+    - [x] Return cropped images with metadata
+    - [x] Unit tests
 
 - [ ] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
   - File: `conceptgraph/agents/tools/hypothesis_repair.py`
@@ -197,6 +198,7 @@
 
 - [x] TASK-001: OpenEQA benchmark loader (26 tests)
 - [x] TASK-002: SQA3D benchmark loader (41 tests)
+- [x] TASK-010: Implement request_crops tool backend (32 tests)
 
 ---
 
@@ -212,4 +214,4 @@
 
 ---
 
-*Last updated: 2026-03-20 02:30*
+*Last updated: 2026-03-20 02:40*
