@@ -148,3 +148,16 @@ class Stage2DeepAgentConfig(BaseModel):
     max_images: int = Field(default=6, ge=1, le=12)
     image_max_size: int = Field(default=900, ge=256, le=2048)
     enable_subagents: bool = True
+    # Uncertainty-aware stopping configuration
+    confidence_threshold: float = Field(
+        default=0.4,
+        ge=0.0,
+        le=1.0,
+        description="Minimum confidence required to complete a task. "
+        "Below this threshold, the agent returns 'insufficient_evidence' status.",
+    )
+    enable_uncertainty_stopping: bool = Field(
+        default=True,
+        description="When True, agent will stop with 'insufficient_evidence' if confidence "
+        "is below threshold and no more evidence can be acquired.",
+    )

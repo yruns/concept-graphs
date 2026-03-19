@@ -47,9 +47,13 @@ class _Stage2RuntimeState:
     bundle: Stage2EvidenceBundle
     tool_trace: List[Stage2ToolObservation] = field(default_factory=list)
     evidence_updated: bool = False  # Signals new images need injection
-    seen_image_paths: Set[str] = field(default_factory=set)  # Track already-injected images
+    seen_image_paths: Set[str] = field(
+        default_factory=set
+    )  # Track already-injected images
 
-    def record(self, tool_name: str, tool_input: Dict[str, Any], response_text: str) -> None:
+    def record(
+        self, tool_name: str, tool_input: Dict[str, Any], response_text: str
+    ) -> None:
         self.tool_trace.append(
             Stage2ToolObservation(
                 tool_name=tool_name,
@@ -73,9 +77,13 @@ def _default_output_instruction(task_type: Stage2TaskType) -> str:
     if task_type == Stage2TaskType.QA:
         return "Answer the question and keep the answer grounded in cited frames."
     if task_type == Stage2TaskType.VISUAL_GROUNDING:
-        return "Identify the best supporting frame(s) and explain the grounding evidence."
+        return (
+            "Identify the best supporting frame(s) and explain the grounding evidence."
+        )
     if task_type == Stage2TaskType.NAV_PLAN:
-        return "Produce a navigation plan grounded in visible landmarks and uncertainty."
+        return (
+            "Produce a navigation plan grounded in visible landmarks and uncertainty."
+        )
     if task_type == Stage2TaskType.MANIPULATION:
         return "Produce a manipulation plan with visible preconditions and missing evidence."
     return "Produce an evidence-grounded answer with explicit uncertainty."
@@ -220,7 +228,9 @@ class Stage2DeepResearchAgent:
     ) -> str:
         """Return the requested subset of object context."""
         if not bundle.object_context:
-            return bundle.scene_summary or "No object context or scene summary available."
+            return (
+                bundle.scene_summary or "No object context or scene summary available."
+            )
 
         if not object_terms:
             return json.dumps(bundle.object_context, indent=2, ensure_ascii=False)
@@ -244,9 +254,11 @@ class Stage2DeepResearchAgent:
             """Inspect the Stage-1 hypothesis, selector status, and frame mapping metadata."""
 
             payload = {
-                "hypothesis": runtime.bundle.hypothesis.model_dump()
-                if runtime.bundle.hypothesis
-                else None,
+                "hypothesis": (
+                    runtime.bundle.hypothesis.model_dump()
+                    if runtime.bundle.hypothesis
+                    else None
+                ),
                 "extra_metadata": runtime.bundle.extra_metadata,
                 "num_keyframes": len(runtime.bundle.keyframes),
             }
@@ -339,7 +351,9 @@ class Stage2DeepResearchAgent:
                 if response.updated_bundle is not None:
                     runtime.bundle = response.updated_bundle
                     runtime.mark_evidence_updated()
-            runtime.record("switch_or_expand_hypothesis", request, response.response_text)
+            runtime.record(
+                "switch_or_expand_hypothesis", request, response.response_text
+            )
             return response.response_text
 
         return [
@@ -366,8 +380,23 @@ class Stage2DeepResearchAgent:
             ),
         }
 
-        payload_schema = task.expected_output_schema or _default_payload_schema(task.task_type)
-        instruction = task.output_instruction or _default_output_instruction(task.task_type)
+        payload_schema = task.expected_output_schema or _default_payload_schema(
+            task.task_type
+        )
+        instruction = task.output_instruction or _default_output_instruction(
+            task.task_type
+        )
+
+        # Build uncertainty-aware instructions
+        uncertainty_instructions = (
+            "Uncertainty-aware stopping:\n"
+            f"- Minimum confidence threshold for completion: {self.config.confidence_threshold:.2f}\n"
+            "- If you cannot find sufficient evidence to answer with confidence above this threshold, "
+            "set status to 'insufficient_evidence' rather than guessing.\n"
+            "- List all missing evidence or ambiguous observations in the 'uncertainties' field.\n"
+            "- It is better to admit uncertainty than to hallucinate answers.\n"
+            "- Your confidence score should reflect actual evidence quality, not task difficulty.\n\n"
+        )
 
         return (
             "You are the Stage-2 research agent for query-scene.\n\n"
@@ -383,6 +412,7 @@ class Stage2DeepResearchAgent:
             "- Only call request_more_views, request_crops, or switch_or_expand_hypothesis "
             "when you have SPECIFIC evidence gaps that cannot be resolved from current images.\n"
             "- When requesting more evidence, explain what specific visual detail is missing.\n\n"
+            f"{uncertainty_instructions}"
             "Framework constraints:\n"
             "- This runtime is built with LangChain v1 and DeepAgents.\n"
             "- Use the built-in todo planning capability according to the selected plan mode.\n"
@@ -448,8 +478,12 @@ class Stage2DeepResearchAgent:
             if bundle.hypothesis
             else "{}"
         )
-        payload_schema = task.expected_output_schema or _default_payload_schema(task.task_type)
-        instruction = task.output_instruction or _default_output_instruction(task.task_type)
+        payload_schema = task.expected_output_schema or _default_payload_schema(
+            task.task_type
+        )
+        instruction = task.output_instruction or _default_output_instruction(
+            task.task_type
+        )
 
         prompt = (
             f"Task type: {task.task_type.value}\n"
@@ -504,7 +538,9 @@ class Stage2DeepResearchAgent:
             return None
 
         # Limit new images to avoid token explosion
-        new_images = new_images[: self.config.max_images - len(runtime.seen_image_paths)]
+        new_images = new_images[
+            : self.config.max_images - len(runtime.seen_image_paths)
+        ]
         if not new_images:
             return None
 
@@ -575,7 +611,96 @@ class Stage2DeepResearchAgent:
             payload={},
         )
 
-    def run(self, task: Stage2TaskSpec, bundle: Stage2EvidenceBundle) -> Stage2AgentResult:
+    def _apply_uncertainty_stopping(
+        self,
+        response: Stage2StructuredResponse,
+        can_acquire_more_evidence: bool,
+    ) -> Stage2StructuredResponse:
+        """Apply uncertainty-aware stopping rules to the response.
+
+        This implements the "evidence-grounded uncertainty" principle:
+        - If confidence is below threshold AND no more evidence can be acquired,
+          the agent should stop with INSUFFICIENT_EVIDENCE status
+        - If the agent claims completion but confidence is too low, downgrade status
+        - Ensures the agent doesn't hallucinate answers when evidence is missing
+
+        Args:
+            response: The structured response from the agent
+            can_acquire_more_evidence: Whether the loop can continue acquiring evidence
+
+        Returns:
+            Potentially modified response with appropriate status
+        """
+        if not self.config.enable_uncertainty_stopping:
+            return response
+
+        threshold = self.config.confidence_threshold
+
+        # Case 1: Agent completed with low confidence and no more evidence available
+        if (
+            response.status == Stage2Status.COMPLETED
+            and response.confidence < threshold
+            and not can_acquire_more_evidence
+        ):
+            logger.info(
+                "[Stage2DeepResearchAgent] downgrading COMPLETED to INSUFFICIENT_EVIDENCE: "
+                "confidence={:.2f} < threshold={:.2f}, cannot acquire more evidence",
+                response.confidence,
+                threshold,
+            )
+            # Create a modified response with INSUFFICIENT_EVIDENCE status
+            return Stage2StructuredResponse(
+                task_type=response.task_type,
+                status=Stage2Status.INSUFFICIENT_EVIDENCE,
+                summary=f"Low confidence answer ({response.confidence:.2f}): {response.summary}",
+                confidence=response.confidence,
+                uncertainties=list(response.uncertainties)
+                + [
+                    f"Confidence {response.confidence:.2f} below threshold {threshold:.2f}. "
+                    "The answer may not be reliable due to insufficient visual evidence."
+                ],
+                cited_frame_indices=response.cited_frame_indices,
+                evidence_items=response.evidence_items,
+                plan=response.plan,
+                payload=response.payload,
+            )
+
+        # Case 2: Agent already indicated insufficient evidence - validate
+        if response.status == Stage2Status.INSUFFICIENT_EVIDENCE:
+            logger.info(
+                "[Stage2DeepResearchAgent] agent correctly reported insufficient evidence "
+                "with confidence={:.2f}",
+                response.confidence,
+            )
+            return response
+
+        # Case 3: Agent needs more evidence but can't acquire it
+        if (
+            response.status == Stage2Status.NEEDS_MORE_EVIDENCE
+            and not can_acquire_more_evidence
+        ):
+            logger.info(
+                "[Stage2DeepResearchAgent] upgrading NEEDS_MORE_EVIDENCE to INSUFFICIENT_EVIDENCE: "
+                "evidence acquisition exhausted"
+            )
+            return Stage2StructuredResponse(
+                task_type=response.task_type,
+                status=Stage2Status.INSUFFICIENT_EVIDENCE,
+                summary=response.summary,
+                confidence=response.confidence,
+                uncertainties=list(response.uncertainties)
+                + ["Unable to acquire additional evidence to complete the task."],
+                cited_frame_indices=response.cited_frame_indices,
+                evidence_items=response.evidence_items,
+                plan=response.plan,
+                payload=response.payload,
+            )
+
+        return response
+
+    def run(
+        self, task: Stage2TaskSpec, bundle: Stage2EvidenceBundle
+    ) -> Stage2AgentResult:
         """Execute the Stage-2 DeepAgent with iterative evidence refinement.
 
         This implementation supports a true evidence-seeking loop:
@@ -637,7 +762,21 @@ class Stage2DeepResearchAgent:
             len(runtime.tool_trace),
         )
 
+        # Determine if more evidence can be acquired
+        # Evidence acquisition is exhausted when:
+        # 1. We've used all reasoning turns
+        # 2. No callbacks are configured for evidence expansion
+        can_acquire_more_evidence = turns_used < task.max_reasoning_turns and (
+            self.more_views_callback is not None
+            or self.crop_callback is not None
+            or self.hypothesis_callback is not None
+        )
+
         final_response = self._normalize_final_response(task, raw_state)
+        # Apply uncertainty-aware stopping rules
+        final_response = self._apply_uncertainty_stopping(
+            final_response, can_acquire_more_evidence
+        )
         return Stage2AgentResult(
             task=task,
             result=final_response,

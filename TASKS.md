@@ -97,7 +97,7 @@
     - [ ] Implement budget-aware stopping
     - [ ] Log budget usage in trace
 
-- [ ] TASK-013: Implement uncertainty-aware stopping | Priority: 2 | Est: 3h
+- [~] TASK-013: Implement uncertainty-aware stopping | Priority: 2 | Est: 3h
   - File: `conceptgraph/agents/stage2_deep_agent.py`
   - Acceptance:
     - [ ] Agent can output "insufficient evidence" with uncertainty
