@@ -195,7 +195,10 @@
 
 ## Phase 5: Ablation Studies (Priority 2)
 
-- [ ] TASK-040: Ablation: No tool calls (one-shot) | Priority: 2 | Est: 2h
+- [x] TASK-040: Ablation: No tool calls (one-shot) | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/ablations/run_oneshot_ablation.py`
+  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_oneshot_ablation.py` (44 tests passing)
+  - Status: Complete with OneshotAblationRunner, cross-benchmark support, academic alignment
 - [ ] TASK-041: Ablation: + request_more_views only | Priority: 2 | Est: 2h
 - [ ] TASK-042: Ablation: + request_crops only | Priority: 2 | Est: 2h
 - [ ] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
@@ -242,6 +245,7 @@
 - [x] TASK-032: Run full Stage 2 agent on OpenEQA (33 tests)
 - [x] TASK-033: Run SQA3D experiments - all 3 conditions (67 tests)
 - [x] TASK-034: Run ScanRefer experiments - all 3 conditions (65 tests)
+- [x] TASK-040: Ablation: No tool calls (one-shot) (44 tests)
 
 ---
 
