@@ -211,7 +211,10 @@
   - File: `conceptgraph/evaluation/ablations/run_hypothesis_repair_only_ablation.py`
   - Tests: `conceptgraph/evaluation/ablations/tests/test_run_hypothesis_repair_only_ablation.py` (67 tests passing)
   - Status: Complete with HypothesisRepairOnlyAblationRunner, enables symbolic-to-visual repair for hypothesis switching
-- [ ] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
+- [x] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/ablations/run_uncertainty_ablation.py`
+  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_uncertainty_ablation.py` (63 tests passing)
+  - Status: Complete with UncertaintyAblationRunner, tests evidence-grounded uncertainty claim by disabling uncertainty stopping
 
 ---
 
@@ -258,6 +261,7 @@
 - [x] TASK-041: Ablation: + request_more_views only (54 tests)
 - [x] TASK-042: Ablation: + request_crops only (60 tests)
 - [x] TASK-043: Ablation: + hypothesis_repair only (67 tests)
+- [x] TASK-044: Ablation: + uncertainty output (63 tests)
 
 ---
 
@@ -276,4 +280,4 @@
 
 ---
 
-*Last updated: 2026-03-20 04:50*
+*Last updated: 2026-03-20 05:15*

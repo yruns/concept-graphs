@@ -8,7 +8,7 @@ TASK-040 through TASK-044 implement the following ablation conditions:
 - TASK-041: + request_more_views only
 - TASK-042: + request_crops only
 - TASK-043: + hypothesis_repair only
-- TASK-044: + uncertainty output
+- TASK-044: + uncertainty output (tests evidence-grounded uncertainty claim)
 
 Academic Support:
 - Systematic ablation enables isolated component analysis
@@ -35,6 +35,11 @@ from conceptgraph.evaluation.ablations.run_hypothesis_repair_only_ablation impor
     run_hypothesis_repair_only_ablation,
     HYPOTHESIS_REPAIR_ONLY_ABLATION_CONFIG,
 )
+from conceptgraph.evaluation.ablations.run_uncertainty_ablation import (
+    UncertaintyAblationRunner,
+    run_uncertainty_ablation,
+    UNCERTAINTY_ABLATION_CONFIG,
+)
 
 __all__ = [
     "OneshotAblationRunner",
@@ -48,4 +53,7 @@ __all__ = [
     "HypothesisRepairOnlyAblationRunner",
     "run_hypothesis_repair_only_ablation",
     "HYPOTHESIS_REPAIR_ONLY_ABLATION_CONFIG",
+    "UncertaintyAblationRunner",
+    "run_uncertainty_ablation",
+    "UNCERTAINTY_ABLATION_CONFIG",
 ]
