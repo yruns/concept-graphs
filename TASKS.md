@@ -97,7 +97,7 @@
     - [ ] Implement budget-aware stopping
     - [ ] Log budget usage in trace
 
-- [~] TASK-013: Implement uncertainty-aware stopping | Priority: 2 | Est: 3h
+- [x] TASK-013: Implement uncertainty-aware stopping | Priority: 2 | Est: 3h
   - File: `conceptgraph/agents/stage2_deep_agent.py`
   - Acceptance:
     - [ ] Agent can output "insufficient evidence" with uncertainty
@@ -108,13 +108,15 @@
 
 ## Phase 3: Evaluation Pipeline (Priority 1)
 
-- [ ] TASK-020: Build batch evaluation script | Priority: 1 | Est: 4h
+- [x] TASK-020: Build batch evaluation script | Priority: 1 | Est: 4h
   - File: `conceptgraph/evaluation/batch_eval.py`
+  - Tests: `conceptgraph/evaluation/tests/test_batch_eval.py` (33 tests passing)
+  - Status: Complete with parallel evaluation, checkpointing, and ablation support
   - Acceptance:
-    - [ ] Run Stage 1 + Stage 2 on benchmark samples
-    - [ ] Support parallel evaluation
-    - [ ] Progress tracking and resumption
-    - [ ] Output structured results JSON
+    - [x] Run Stage 1 + Stage 2 on benchmark samples
+    - [x] Support parallel evaluation
+    - [x] Progress tracking and resumption
+    - [x] Output structured results JSON
 
 - [ ] TASK-021: Implement metrics aggregation | Priority: 1 | Est: 2h
   - File: `conceptgraph/evaluation/metrics.py`
@@ -201,6 +203,8 @@
 - [x] TASK-002: SQA3D benchmark loader (41 tests)
 - [x] TASK-010: Implement request_crops tool backend (32 tests)
 - [x] TASK-011: Implement switch_or_expand_hypothesis tool (41 tests)
+- [x] TASK-013: Implement uncertainty-aware stopping (tests in stage2_deep_agent tests)
+- [x] TASK-020: Build batch evaluation script (33 tests)
 
 ---
 
@@ -211,9 +215,10 @@
 | OpenEQA tests | 26 | 26 |
 | SQA3D tests | 41 | 41 |
 | ScanRefer tests | 0 | 30+ |
-| Total test coverage | ~60% | 80% |
+| Batch Eval tests | 33 | 33 |
+| Total test coverage | ~65% | 80% |
 | Benchmark loaders | 2/4 | 4/4 |
 
 ---
 
-*Last updated: 2026-03-20 02:40*
+*Last updated: 2026-03-20 03:00*
