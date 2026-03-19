@@ -11,10 +11,24 @@ from .request_crops import (
     CropBackend,
     create_crop_callback,
 )
+from .hypothesis_repair import (
+    HypothesisAction,
+    HypothesisHistoryEntry,
+    HypothesisRepairConfig,
+    HypothesisRepairBackend,
+    create_hypothesis_repair_callback,
+)
 
 __all__ = [
+    # request_crops
     "CropRequest",
     "CropResult",
     "CropBackend",
     "create_crop_callback",
+    # hypothesis_repair
+    "HypothesisAction",
+    "HypothesisHistoryEntry",
+    "HypothesisRepairConfig",
+    "HypothesisRepairBackend",
+    "create_hypothesis_repair_callback",
 ]

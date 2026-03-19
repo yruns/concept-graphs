@@ -81,13 +81,14 @@
     - [x] Return cropped images with metadata
     - [x] Unit tests
 
-- [ ] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
+- [x] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
   - File: `conceptgraph/agents/tools/hypothesis_repair.py`
+  - Tests: `conceptgraph/agents/tools/tests/test_hypothesis_repair.py` (41 tests passing)
   - Depends: Stage 1 hypothesis output
   - Acceptance:
-    - [ ] Switch between direct/proxy/context hypotheses
-    - [ ] Request alternative hypotheses from Stage 1
-    - [ ] Track hypothesis history for analysis
+    - [x] Switch between direct/proxy/context hypotheses
+    - [x] Request alternative hypotheses from Stage 1
+    - [x] Track hypothesis history for analysis
 
 - [~] TASK-012: Add token budget tracking to agent | Priority: 2 | Est: 2h
   - File: `conceptgraph/agents/stage2_deep_agent.py`
@@ -199,6 +200,7 @@
 - [x] TASK-001: OpenEQA benchmark loader (26 tests)
 - [x] TASK-002: SQA3D benchmark loader (41 tests)
 - [x] TASK-010: Implement request_crops tool backend (32 tests)
+- [x] TASK-011: Implement switch_or_expand_hypothesis tool (41 tests)
 
 ---
 
