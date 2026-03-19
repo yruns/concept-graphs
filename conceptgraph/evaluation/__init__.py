@@ -39,6 +39,13 @@ from .ablation_config import (
     load_experiment_configs,
     save_ablation_matrix,
 )
+from .trace_integration import (
+    EvalTraceMetadata,
+    EvalTraceManager,
+    TracingBatchEvaluatorMixin,
+    create_tracing_evaluator,
+    export_run_trace_report,
+)
 
 __all__ = [
     # Batch evaluation
@@ -67,4 +74,10 @@ __all__ = [
     "generate_ablation_matrix",
     "load_experiment_configs",
     "save_ablation_matrix",
+    # Trace integration
+    "EvalTraceMetadata",
+    "EvalTraceManager",
+    "TracingBatchEvaluatorMixin",
+    "create_tracing_evaluator",
+    "export_run_trace_report",
 ]

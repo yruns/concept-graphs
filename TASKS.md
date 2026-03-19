@@ -136,12 +136,15 @@
     - [x] Enable/disable individual tools
     - [x] Control agent parameters
 
-- [ ] TASK-023: Integrate with trace server for logging | Priority: 2 | Est: 2h
+- [x] TASK-023: Integrate with trace server for logging | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/trace_integration.py`
+  - Tests: `conceptgraph/evaluation/tests/test_trace_integration.py` (33 tests passing)
+  - Status: Complete with EvalTraceManager, TracingBatchEvaluatorMixin, CSV/JSON export
   - Depends: TASK-020
   - Acceptance:
-    - [ ] Auto-save traces during evaluation
-    - [ ] Link traces to benchmark samples
-    - [ ] Export trace statistics
+    - [x] Auto-save traces during evaluation
+    - [x] Link traces to benchmark samples
+    - [x] Export trace statistics
 
 ---
 
@@ -210,6 +213,7 @@
 - [x] TASK-013: Implement uncertainty-aware stopping (tests in stage2_deep_agent tests)
 - [x] TASK-021: Implement metrics aggregation (56 tests)
 - [x] TASK-022: Create ablation configuration system (60 tests)
+- [x] TASK-023: Integrate with trace server for logging (33 tests)
 
 ---
 
@@ -222,9 +226,10 @@
 | ScanRefer tests | 0 | 30+ |
 | Batch Eval tests | 33 | 33 |
 | Ablation Config tests | 60 | 60 |
+| Trace Integration tests | 33 | 33 |
 | Total test coverage | ~70% | 80% |
 | Benchmark loaders | 2/4 | 4/4 |
 
 ---
 
-*Last updated: 2026-03-20 03:00*
+*Last updated: 2026-03-20 03:26*
