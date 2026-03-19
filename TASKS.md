@@ -171,8 +171,15 @@
   - Output: `results/experiments/openeqa_stage2_full.json`
   - Status: Complete with mock data support, all tools enabled, multi-turn reasoning
 
-- [ ] TASK-033: Run SQA3D experiments (all three conditions) | Priority: 2 | Est: 6h
+- [x] TASK-033: Run SQA3D experiments (all three conditions) | Priority: 2 | Est: 6h
+  - Files:
+    - `conceptgraph/evaluation/scripts/run_sqa3d_stage1_only.py` (Stage 1 only baseline)
+    - `conceptgraph/evaluation/scripts/run_sqa3d_oneshot.py` (One-shot VLM baseline)
+    - `conceptgraph/evaluation/scripts/run_sqa3d_stage2_full.py` (Full Stage 2 agent)
+  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_sqa3d_*.py` (67 tests passing)
   - Depends: TASK-007, TASK-020
+  - Output: `results/experiments/sqa3d_*.json`
+  - Status: Complete with mock data support, situation-aware context, all three experimental conditions
 
 - [ ] TASK-034: Run ScanRefer experiments | Priority: 2 | Est: 4h
   - Depends: TASK-008, TASK-003, TASK-020
@@ -226,6 +233,7 @@
 - [x] TASK-030: Run Stage 1 only baseline on OpenEQA (17 tests)
 - [x] TASK-031: Run one-shot VLM baseline on OpenEQA (21 tests)
 - [x] TASK-032: Run full Stage 2 agent on OpenEQA (33 tests)
+- [x] TASK-033: Run SQA3D experiments - all 3 conditions (67 tests)
 
 ---
 
@@ -244,4 +252,4 @@
 
 ---
 
-*Last updated: 2026-03-20 03:40*
+*Last updated: 2026-03-20 04:15*
