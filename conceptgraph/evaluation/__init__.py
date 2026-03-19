@@ -68,6 +68,20 @@ from .visualizations import (
     create_confidence_accuracy_figure,
     create_all_figures,
 )
+from .experimental_analysis import (
+    BenchmarkAnalysis,
+    AblationAnalysis,
+    ExperimentalAnalysis,
+    compute_benchmark_analysis,
+    compute_ablation_analysis,
+    compute_full_analysis,
+    generate_main_results_analysis,
+    generate_ablation_analysis_text,
+    generate_robustness_analysis,
+    generate_tool_usage_analysis,
+    generate_calibration_analysis,
+    generate_experimental_analysis_section,
+)
 
 __all__ = [
     # Batch evaluation
@@ -122,4 +136,17 @@ __all__ = [
     "create_tool_usage_figure",
     "create_confidence_accuracy_figure",
     "create_all_figures",
+    # Experimental Analysis
+    "BenchmarkAnalysis",
+    "AblationAnalysis",
+    "ExperimentalAnalysis",
+    "compute_benchmark_analysis",
+    "compute_ablation_analysis",
+    "compute_full_analysis",
+    "generate_main_results_analysis",
+    "generate_ablation_analysis_text",
+    "generate_robustness_analysis",
+    "generate_tool_usage_analysis",
+    "generate_calibration_analysis",
+    "generate_experimental_analysis_section",
 ]
