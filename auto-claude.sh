@@ -26,7 +26,7 @@ set -euo pipefail
 # CONFIGURATION
 # ════════════════════════════════════════════════════════════════════════════════
 
-MAX_ITERATIONS="${MAX_ITERATIONS:-50}"
+MAX_ITERATIONS="${MAX_ITERATIONS:-80}"
 RESEARCH_INTERVAL="${RESEARCH_INTERVAL:-5}"
 REVIEW_THRESHOLD="${REVIEW_THRESHOLD:-medium}"
 MODEL="${MODEL:-claude-opus-4-5}"
@@ -141,8 +141,16 @@ get_task_details() {
 # Check if task has unmet dependencies
 check_dependencies() {
     local task_id="$1"
-    # Get 10 lines after this task and find Depends line
-    local deps=$(awk "/$task_id/,/^- \[/{if(/Depends:/)print}" "$TASKS_FILE" | head -1 | sed 's/.*Depends: *//')
+    # Extract only the task block (from task line to next task/section), then find Depends
+    local task_block=$(awk "
+        /^- \[.\] $task_id:/ { found=1; print; next }
+        found && /^- \[/ { exit }
+        found && /^##/ { exit }
+        found && /^---/ { exit }
+        found { print }
+    " "$TASKS_FILE")
+
+    local deps=$(echo "$task_block" | grep -m1 'Depends:' | sed 's/.*Depends: *//')
 
     if [ -z "$deps" ] || [ "$deps" = "None" ] || [[ "$deps" =~ ^[[:space:]]*$ ]]; then
         return 0  # No dependencies
@@ -232,11 +240,41 @@ This project implements a two-stage framework:
 - **Stage 1**: Task-conditioned keyframe retrieval from 3D scene graphs
 - **Stage 2**: VLM agentic reasoning over retrieved visual evidence
 
-Academic innovation points:
-1. Adaptive Evidence Acquisition (VLM decides when to request more evidence)
-2. Symbolic-to-Visual Repair (Stage 2 validates/corrects Stage 1 hypotheses)
-3. Evidence-Grounded Uncertainty (explicit uncertainty output)
-4. Unified Multi-Task Policy (QA, grounding, navigation, manipulation)
+### Academic Innovation Points (CRITICAL - Keep These in Mind)
+
+1. **Adaptive Evidence Acquisition**: VLM agent dynamically decides when to request more visual evidence, not one-shot inference
+2. **Symbolic-to-Visual Repair**: Stage 2 validates and corrects Stage 1 scene graph hypotheses using raw pixels
+3. **Evidence-Grounded Uncertainty**: Explicit uncertainty output when evidence is insufficient (reduce hallucination)
+4. **Unified Multi-Task Policy**: Single agent architecture handles QA, grounding, navigation, manipulation
+
+### Core Research Claim
+> "Evidence-seeking VLM agents that iteratively acquire visual context outperform one-shot baselines, especially when scene graphs have detection failures."
+
+## 🧠 Multi-Step Reasoning Protocol (MANDATORY)
+
+You are NOT a one-shot code generator. You are a **ReAct-style reasoning agent**. For complex tasks:
+
+### Step 1: Understand & Plan
+- Read relevant existing code first (use Read tool)
+- Identify what Stage 1 retrieval provides (keyframes, hypotheses, object metadata)
+- Plan how your implementation supports the academic claims above
+
+### Step 2: Implement Incrementally
+- Make small, testable changes
+- After each significant change, run tests to verify
+- If tests fail, reflect on why and fix before proceeding
+
+### Step 3: Reflect & Validate
+- Does this implementation support "adaptive evidence acquisition"?
+- Does it enable "symbolic-to-visual repair"?
+- Can it produce "evidence-grounded uncertainty"?
+- Is the code reusable across QA/grounding/navigation/manipulation tasks?
+
+### Step 4: Academic Alignment Check
+Before marking complete, ask yourself:
+- [ ] Does this strengthen our claim that iterative evidence-seeking beats one-shot?
+- [ ] Does this help demonstrate Stage 2 can repair Stage 1 failures?
+- [ ] Is this publishable quality (CVPR/NeurIPS/ICLR standard)?
 
 ## Execution Guidelines
 
@@ -257,16 +295,35 @@ Academic innovation points:
 - TODO overview: \`TODO.md\`
 - Task tracking: \`TASKS.md\`
 - Stage 2 design: \`docs/stage2_vlm_agent_design.md\`
+- Stage 2 handoff: \`docs/stage2_agent_handoff.md\`
 
 ## Output Requirements
 
-When done, output a brief summary:
+When done, output a structured summary:
 \`\`\`
 ## Task $task_id Summary
-- Status: DONE | PARTIAL | BLOCKED
-- Files changed: <list>
-- Tests: <passed/total>
-- Notes: <any issues or follow-ups>
+
+### Status: DONE | PARTIAL | BLOCKED
+
+### Files Changed
+- <file1>: <what changed>
+- <file2>: <what changed>
+
+### Tests
+- Passed: X/Y
+- Command: \`<test command used>\`
+
+### Academic Alignment
+- Evidence acquisition support: ✓/✗
+- Symbolic-visual repair support: ✓/✗
+- Uncertainty output support: ✓/✗
+- Multi-task compatibility: ✓/✗
+
+### Reflection
+<What went well? What was challenging? Any insights for future tasks?>
+
+### Follow-ups (if any)
+- <issue or improvement for future tasks>
 \`\`\`
 
 Now execute task $task_id. Focus on quality and correctness.
@@ -295,8 +352,19 @@ run_reviewer() {
 
 You are the **Reviewer Agent** in an autonomous research loop. Your job is to:
 1. Review code changes for quality and correctness
-2. Check alignment with research goals
-3. Suggest improvements
+2. **Critically evaluate alignment with academic innovation goals**
+3. Suggest improvements that strengthen the research contribution
+
+## Core Research Claims (Use These as Review Criteria)
+
+Our paper argues:
+> "Evidence-seeking VLM agents that iteratively acquire visual context outperform one-shot baselines, especially when scene graphs have detection failures."
+
+**Four Innovation Pillars:**
+1. **Adaptive Evidence Acquisition** - Agent dynamically requests more keyframes/crops
+2. **Symbolic-to-Visual Repair** - Stage 2 corrects Stage 1 scene graph errors
+3. **Evidence-Grounded Uncertainty** - Explicit "insufficient evidence" output
+4. **Unified Multi-Task Policy** - Same agent handles QA/grounding/nav/manipulation
 
 ## Changes to Review (Task: $task_id)
 
@@ -310,34 +378,60 @@ $git_diff
 $git_diff_full
 \`\`\`
 
-## Review Criteria
+## Review Dimensions
 
-### Code Quality (Score 1-10)
-- [ ] Follows Python best practices
-- [ ] Has proper type hints
-- [ ] Has docstrings
-- [ ] No hardcoded values
-- [ ] Error handling present
-- [ ] Tests included
+### 1. Code Quality (Score 1-10)
+- [ ] Follows Python best practices (PEP8, type hints)
+- [ ] Has comprehensive docstrings
+- [ ] No hardcoded values or magic numbers
+- [ ] Proper error handling
+- [ ] Unit tests with good coverage
+- [ ] Code is modular and reusable
 
-### Research Alignment (Score 1-10)
-- [ ] Supports academic innovation claims
+### 2. Research Alignment (Score 1-10)
+- [ ] Supports "iterative evidence acquisition" claim
+- [ ] Enables "symbolic-to-visual repair" workflow
+- [ ] Allows uncertainty/confidence output
+- [ ] Compatible with multi-task evaluation
 - [ ] Follows two-stage paradigm correctly
-- [ ] Consistent with Stage 2 agent design
-- [ ] Enables benchmark evaluation
 
-### Suggestions
-- List specific improvements
-- Flag any issues that need fixing
-- Note if task should be marked complete or needs more work
+### 3. Academic Innovation (Score 1-10)
+- [ ] Implementation is novel (not just wrapper code)
+- [ ] Could be cited as a contribution in paper
+- [ ] Demonstrates clear advantage over one-shot baseline
+- [ ] Enables fair ablation studies
+- [ ] Supports reproducibility
+
+### 4. Publishability Check
+- [ ] Would a CVPR/NeurIPS reviewer accept this as rigorous?
+- [ ] Are there any methodological flaws?
+- [ ] Is the evaluation protocol sound?
 
 ## Output Format
 
 \`\`\`json
 {
   "task_id": "$task_id",
-  "code_quality_score": <1-10>,
-  "research_alignment_score": <1-10>,
+  "scores": {
+    "code_quality": <1-10>,
+    "research_alignment": <1-10>,
+    "academic_innovation": <1-10>,
+    "overall": <1-10>
+  },
+  "verdict": "APPROVE" | "REQUEST_CHANGES" | "NEEDS_DISCUSSION",
+  "strengths": ["strength1", "strength2"],
+  "issues": {
+    "critical": ["must fix before merge"],
+    "major": ["should fix"],
+    "minor": ["nice to have"]
+  },
+  "academic_concerns": ["any concerns about research validity"],
+  "suggestions": ["actionable improvement"],
+  "should_commit": true | false
+}
+\`\`\`
+
+Be rigorous but constructive. Our goal is **publishable research at top venues**.
   "overall_verdict": "APPROVE" | "REQUEST_CHANGES" | "NEEDS_DISCUSSION",
   "issues": ["issue1", "issue2"],
   "suggestions": ["suggestion1", "suggestion2"],

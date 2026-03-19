@@ -26,7 +26,7 @@
   - Tests: `conceptgraph/benchmarks/tests/test_sqa3d.py` (41 tests passing)
   - Status: Complete with situation context
 
-- [~] TASK-003: ScanRefer benchmark loader | Priority: 1 | Est: 3h
+- [x] TASK-003: ScanRefer benchmark loader | Priority: 1 | Est: 3h
   - File: `conceptgraph/benchmarks/scanrefer_loader.py`
   - Tests: `conceptgraph/benchmarks/tests/test_scanrefer.py`
   - Depends: None
@@ -53,7 +53,7 @@
 
 ### Dataset Download
 
-- [ ] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
+- [~] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
   - Command: `download_openeqa("/data/benchmarks", include_frames=True)`
   - Note: Frames are ~50GB, start with metadata only first
 
@@ -71,7 +71,7 @@
 
 ### Tool Implementation
 
-- [!] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
+- [ ] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
   - File: `conceptgraph/agents/tools/request_crops.py`
   - Depends: Stage 1 object detection output
   - Acceptance:
@@ -80,7 +80,7 @@
     - [ ] Return cropped images with metadata
     - [ ] Unit tests
 
-- [!] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
+- [ ] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
   - File: `conceptgraph/agents/tools/hypothesis_repair.py`
   - Depends: Stage 1 hypothesis output
   - Acceptance:
