@@ -72,12 +72,13 @@
 - `conceptgraph/agents/`
   - Stage 2 canonical package，与 `query_scene` 同级。
   - 当前实现框架是 `LangChain v1 + DeepAgents`，不是自定义 agent loop。
-  - 模型初始化当前使用单 key 的 AzureOpenAI-compatible Gemini client，不走 `GeminiClientPool`。
+  - 默认模型当前切到 `gpt-5.2-2025-12-11`；Gemini 保留为可选 override，但当前 `DeepAgents + Gemini` 的 FC 路径不稳定。
+  - 模型初始化当前使用单 key 的 AzureOpenAI-compatible `AzureChatOpenAI` client，不走 `GeminiClientPool`。
   - 默认 base url 应使用项目内办公网地址：`https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl`
   - 初始化 payload 会写入：
     - `extra_body.session_id`
-    - `extra_body.thinking.include_thoughts=True`
-    这样可以利用 provider-side prompt caching。
+    - `extra_body.thinking.include_thoughts=True`（仅在显式开启时）
+    这样可以利用 provider-side prompt caching，并在需要时打开 provider-specific thinking。
   - 关键模块：
     - `models.py`：`Stage2TaskSpec / Stage2EvidenceBundle / Stage2StructuredResponse`
     - `adapters.py`：把 `KeyframeResult` 转成 Stage 2 evidence bundle

@@ -56,12 +56,14 @@
   - `conceptgraph/query_scene/` 只承载 Stage 1 query parsing / retrieval
   - `conceptgraph/agents/` 承载 Stage 2 LangChain v1 + DeepAgents runtime、schema、adapter、tests
 - Stage 2 当前的 canonical framework choice 是 `LangChain v1 + DeepAgents`，而不是自定义 agent loop。
-- Stage 2 当前的 Gemini 接入方式是单 key 的 AzureOpenAI-compatible `AzureChatOpenAI` client，不走 `GeminiClientPool`。
+- Stage 2 当前默认 backend 是 `gpt-5.2-2025-12-11`；模型接入方式是单 key 的 AzureOpenAI-compatible `AzureChatOpenAI` client，不走 pool。
 - Stage 2 默认使用项目内的办公网 base url：`https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl`；不要默认切到生产网关地址。
-- Stage 2 初始化模型时必须带稳定的 `extra_body.session_id`，并默认开启 `extra_body.thinking.include_thoughts=True`，以便启用 provider-side prompt caching。
+- Gemini 仍可作为可选 override，但当前 `DeepAgents + Gemini` 的 FC 路径不稳定，不作为默认调试模型。
+- Stage 2 初始化模型时必须带稳定的 `extra_body.session_id`，以便启用 provider-side prompt caching；`extra_body.thinking.include_thoughts` 仅在显式开启时注入。
 - Stage 2 支持 `qa / visual_grounding / nav_plan / manipulation` 四类任务，使用统一 structured response envelope，并通过 `plan_mode=off|brief|full` 控制 planning 强度。
 - Stage 2 工具主线是 `inspect_stage1_metadata / retrieve_object_context / request_more_views / request_crops / switch_or_expand_hypothesis`。
 - 完整设计说明在 `docs/stage2_vlm_agent_design.md`。
+- 若继续做 Stage 2，请在完成 memory bootstrap 后额外阅读 `docs/stage2_agent_handoff.md`，其中记录了当前实现进展、live probe 结论、未提交状态和下一步建议。
 - 当前 query parser 的对外协议是 `HypothesisOutputV1`，主入口是 `KeyframeSelector.select_keyframes_v2()`；返回 metadata 中版本号仍写作 `v3`。
 - `KeyframeSelector.parse_query_hypotheses()` 默认会生成 `scene_path/bev/scene_bev_<hash>.png` 作为多模态输入；该图使用 `ReplicaDefaultBEVConfig`，是 mesh-only、无 object marker/label 的 BEV。
 - `conceptgraph/query_scene/examples/simple_parse_test.py` 以及 `conceptgraph/query_scene/examples/test_nested_query_parsing.py` 中的 `SimpleQueryParser` 分支已过时；当前源码里不存在 `SimpleQueryParser`，不要把它们当作冒烟命令。

@@ -45,7 +45,7 @@
 如果第二阶段只是：
 
 - 取 top-k 关键帧
-- 全部喂给 Gemini
+- 全部喂给一个 VLM
 - 直接让模型吐答案
 
 那更像一个工程 pipeline，而不是一个有研究价值的方法。主要问题：
@@ -97,7 +97,7 @@ Stage 2 不是简单 answerer，而是：
 
 - 一个 ReAct-style VLM agent
 - 一个 `LangChain v1 + DeepAgents` runtime，而不是手写循环
-- 一个单 key 的 AzureOpenAI-compatible Gemini client，而不是 pool fan-out
+- 默认以 `gpt-5.2-2025-12-11` 作为单 key 的 AzureOpenAI-compatible backend，而不是 pool fan-out
 - 输入是 keyframes + optional BEV + Stage 1 hypothesis metadata
 - 输出是统一 structured response + evidence trace + uncertainty
 
@@ -312,7 +312,7 @@ Agent 每一步只做一件事，并由 planning mode 控制显式规划强度�
 2. 代码层
 - 把 Stage 2 从 `conceptgraph/query_scene/` 中拆到同级目录 `conceptgraph/agents/`
 - 用 `LangChain v1 + DeepAgents` 实现 agent runtime
-- 用单 key AzureOpenAI-compatible Gemini 初始化模型，并在 `extra_body` 中写入稳定 `session_id`
+- 默认用单 key AzureOpenAI-compatible GPT 5.2 初始化模型，并在 `extra_body` 中写入稳定 `session_id`
 - 固定 `Stage2TaskSpec + Stage2EvidenceBundle -> Stage2StructuredResponse` 的统一协议
 - 具体的 more-view / crop / hypothesis backend 后续逐步接入
 
@@ -320,7 +320,7 @@ Agent 每一步只做一件事，并由 planning mode 控制显式规划强度�
 
 你的研究思路是成立的，而且方向是对的。
 
-真正要避免的不是“用了 Gemini”，而是：
+真正要避免的不是“用了某个大模型”，而是：
 
 - 第二阶段如果只做一次性多图问答，会太像工程
 - 第二阶段如果被设计成 evidence-seeking agent，就有更强的方法学空间

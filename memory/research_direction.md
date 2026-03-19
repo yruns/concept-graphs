@@ -27,9 +27,11 @@
 - 输入：Stage 1 选出的关键帧、optional BEV、hypothesis metadata、scene/object context
 - 核心：让 VLM 以 Agent 方式做多步推理，而不是一次性 prompt
 - 当前 canonical 实现：`LangChain v1 + DeepAgents`
-- Stage 2 模型接入采用单 key 的 AzureOpenAI-compatible Gemini client，不走 `GeminiClientPool`
+- Stage 2 默认 backend 切到 `gpt-5.2-2025-12-11`
+- Stage 2 模型接入采用单 key 的 AzureOpenAI-compatible `AzureChatOpenAI` client，不走 pool
 - Stage 2 默认应使用项目内办公网 base url：`https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl`
-- 初始化时必须写入稳定的 `extra_body.session_id`，并默认开启 `extra_body.thinking.include_thoughts=True`，以便利用 provider-side prompt caching
+- Gemini 保留为可选 override，但当前 `DeepAgents + Gemini` 的 FC 路径不稳定，不作为默认调试模型
+- 初始化时必须写入稳定的 `extra_body.session_id`，以便利用 provider-side prompt caching；`extra_body.thinking.include_thoughts` 仅在显式开启时注入
 - 推荐范式：ReAct + planning + 显式工具调用 + unified structured response
 
 当前代码位置：
@@ -38,6 +40,7 @@
 - `conceptgraph/agents/adapters.py`
 - `conceptgraph/agents/stage2_deep_agent.py`
 - `conceptgraph/agents/tests/test_stage2_deep_agent.py`
+- 当前实现进展与 handoff 说明：`docs/stage2_agent_handoff.md`
 
 建议最小工具集：
 

@@ -1,4 +1,4 @@
-"""DeepAgents-backed Stage-2 research agent."""
+"""DeepAgents-backed Stage-2 research agent with iterative evidence refinement."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ import json
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Union
 
 from deepagents import create_deep_agent
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langchain_core.tools import BaseTool, tool
 from langchain_openai import AzureChatOpenAI
 from loguru import logger
@@ -31,8 +31,8 @@ from .models import (
 ToolCallback = Callable[[Stage2EvidenceBundle, Dict[str, Any]], Any]
 
 
-class GeminiCompatibleAzureChatOpenAI(AzureChatOpenAI):
-    """AzureChatOpenAI variant that avoids Gemini-incompatible required tool mode."""
+class ToolChoiceCompatibleAzureChatOpenAI(AzureChatOpenAI):
+    """AzureChatOpenAI variant that normalizes tool-choice for stricter providers."""
 
     def bind_tools(self, tools, *, tool_choice=None, **kwargs):
         if tool_choice in ("any", "required", True):
@@ -46,6 +46,8 @@ class _Stage2RuntimeState:
 
     bundle: Stage2EvidenceBundle
     tool_trace: List[Stage2ToolObservation] = field(default_factory=list)
+    evidence_updated: bool = False  # Signals new images need injection
+    seen_image_paths: Set[str] = field(default_factory=set)  # Track already-injected images
 
     def record(self, tool_name: str, tool_input: Dict[str, Any], response_text: str) -> None:
         self.tool_trace.append(
@@ -55,6 +57,16 @@ class _Stage2RuntimeState:
                 response_text=response_text,
             )
         )
+
+    def mark_evidence_updated(self) -> None:
+        """Signal that the bundle was updated and new images may need injection."""
+        self.evidence_updated = True
+
+    def consume_evidence_update(self) -> bool:
+        """Check and reset the evidence-updated flag."""
+        updated = self.evidence_updated
+        self.evidence_updated = False
+        return updated
 
 
 def _default_output_instruction(task_type: Stage2TaskType) -> str:
@@ -123,11 +135,11 @@ class Stage2DeepResearchAgent:
         return extra_body
 
     def _get_llm(self) -> AzureChatOpenAI:
-        """Return a single-key AzureOpenAI-compatible Gemini chat model."""
+        """Return a single-key AzureOpenAI-compatible chat model."""
         if self._llm is None:
-            # Use a stable single-key client instead of GeminiClientPool so the
-            # runtime can keep a consistent session_id for provider-side prompt caching.
-            self._llm = GeminiCompatibleAzureChatOpenAI(
+            # Use a stable single-key client so the runtime can keep a
+            # consistent session_id for provider-side prompt caching.
+            self._llm = ToolChoiceCompatibleAzureChatOpenAI(
                 azure_deployment=self.config.model_name,
                 model=self.config.model_name,
                 api_key=self.config.api_key,
@@ -274,6 +286,7 @@ class Stage2DeepResearchAgent:
                 )
                 if response.updated_bundle is not None:
                     runtime.bundle = response.updated_bundle
+                    runtime.mark_evidence_updated()
             runtime.record("request_more_views", request, response.response_text)
             return response.response_text
 
@@ -300,6 +313,7 @@ class Stage2DeepResearchAgent:
                 )
                 if response.updated_bundle is not None:
                     runtime.bundle = response.updated_bundle
+                    runtime.mark_evidence_updated()
             runtime.record("request_crops", request, response.response_text)
             return response.response_text
 
@@ -324,6 +338,7 @@ class Stage2DeepResearchAgent:
                 )
                 if response.updated_bundle is not None:
                     runtime.bundle = response.updated_bundle
+                    runtime.mark_evidence_updated()
             runtime.record("switch_or_expand_hypothesis", request, response.response_text)
             return response.response_text
 
@@ -362,10 +377,17 @@ class Stage2DeepResearchAgent:
             "- Prefer evidence-seeking behavior over one-shot answering.\n"
             "- Use tools when keyframes are insufficient; do not hallucinate missing evidence.\n"
             "- Explicitly surface uncertainty when the necessary evidence is absent.\n\n"
+            "CRITICAL - Look before requesting:\n"
+            "- ALWAYS examine the provided keyframe images FIRST before calling any tools.\n"
+            "- If the answer is clearly visible in the current images, answer directly.\n"
+            "- Only call request_more_views, request_crops, or switch_or_expand_hypothesis "
+            "when you have SPECIFIC evidence gaps that cannot be resolved from current images.\n"
+            "- When requesting more evidence, explain what specific visual detail is missing.\n\n"
             "Framework constraints:\n"
             "- This runtime is built with LangChain v1 and DeepAgents.\n"
             "- Use the built-in todo planning capability according to the selected plan mode.\n"
-            "- Subagents may be used in FULL mode when decomposition is useful.\n\n"
+            "- Subagents may be used in FULL mode when decomposition is useful.\n"
+            f"- Maximum reasoning budget: {task.max_reasoning_turns} turns.\n\n"
             f"{plan_instructions[task.plan_mode]}\n\n"
             "Unified output contract:\n"
             f"- task_type must be `{task.task_type.value}`.\n"
@@ -408,9 +430,10 @@ class Stage2DeepResearchAgent:
     def _build_user_message(
         self,
         task: Stage2TaskSpec,
-        bundle: Stage2EvidenceBundle,
+        runtime: _Stage2RuntimeState,
     ) -> HumanMessage:
         """Assemble the multimodal task message for the DeepAgent."""
+        bundle = runtime.bundle
         keyframe_lines = []
         for keyframe in bundle.keyframes:
             keyframe_lines.append(
@@ -447,12 +470,73 @@ class Stage2DeepResearchAgent:
 
         content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
         for image_path in self._collect_image_paths(bundle):
+            runtime.seen_image_paths.add(image_path)
             content.append(
                 {
                     "type": "image_url",
                     "image_url": {"url": self._image_to_data_url(image_path)},
                 }
             )
+        return HumanMessage(content=content)
+
+    def _build_evidence_update_message(
+        self,
+        runtime: _Stage2RuntimeState,
+    ) -> Optional[HumanMessage]:
+        """Build a follow-up message injecting newly acquired visual evidence.
+
+        Returns None if no new images have been added to the bundle.
+        """
+        new_images: List[str] = []
+        for keyframe in runtime.bundle.keyframes:
+            if Path(keyframe.image_path).exists():
+                if keyframe.image_path not in runtime.seen_image_paths:
+                    new_images.append(keyframe.image_path)
+
+        if (
+            runtime.bundle.bev_image_path
+            and Path(runtime.bundle.bev_image_path).exists()
+            and runtime.bundle.bev_image_path not in runtime.seen_image_paths
+        ):
+            new_images.append(runtime.bundle.bev_image_path)
+
+        if not new_images:
+            return None
+
+        # Limit new images to avoid token explosion
+        new_images = new_images[: self.config.max_images - len(runtime.seen_image_paths)]
+        if not new_images:
+            return None
+
+        keyframe_lines = []
+        for keyframe in runtime.bundle.keyframes:
+            if keyframe.image_path in new_images:
+                keyframe_lines.append(
+                    f"- idx={keyframe.keyframe_idx}, view_id={keyframe.view_id}, "
+                    f"frame_id={keyframe.frame_id}, note={keyframe.note or 'N/A'}"
+                )
+
+        prompt = (
+            "New visual evidence has been acquired:\n\n"
+            f"Newly added keyframes:\n{chr(10).join(keyframe_lines) if keyframe_lines else '- BEV or crop images'}\n\n"
+            "Please examine these new images and continue your analysis. "
+            "If the evidence is now sufficient, produce your final answer."
+        )
+
+        content: List[Dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for image_path in new_images:
+            runtime.seen_image_paths.add(image_path)
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": self._image_to_data_url(image_path)},
+                }
+            )
+
+        logger.info(
+            "[Stage2DeepResearchAgent] injecting {} new images into context",
+            len(new_images),
+        )
         return HumanMessage(content=content)
 
     def build_agent(self, task: Stage2TaskSpec, bundle: Stage2EvidenceBundle):
@@ -492,16 +576,67 @@ class Stage2DeepResearchAgent:
         )
 
     def run(self, task: Stage2TaskSpec, bundle: Stage2EvidenceBundle) -> Stage2AgentResult:
-        """Execute the Stage-2 DeepAgent end to end."""
+        """Execute the Stage-2 DeepAgent with iterative evidence refinement.
+
+        This implementation supports a true evidence-seeking loop:
+        1. Initial invocation with all currently available keyframes
+        2. If tools acquire new evidence (via callbacks), inject new images
+        3. Continue until structured response or max_reasoning_turns reached
+        """
         graph, runtime = self.build_agent(task, bundle)
-        message = self._build_user_message(task, runtime.bundle)
+        message = self._build_user_message(task, runtime)
         logger.info(
-            "[Stage2DeepResearchAgent] task={} plan_mode={} keyframes={}",
+            "[Stage2DeepResearchAgent] task={} plan_mode={} keyframes={} max_turns={}",
             task.task_type.value,
             task.plan_mode.value,
             len(runtime.bundle.keyframes),
+            task.max_reasoning_turns,
         )
-        raw_state = graph.invoke({"messages": [message]})
+
+        # Iterative evidence refinement loop
+        messages = [message]
+        raw_state: Dict[str, Any] = {}
+        turns_used = 0
+
+        while turns_used < task.max_reasoning_turns:
+            turns_used += 1
+            raw_state = graph.invoke({"messages": messages})
+
+            # Check if structured response indicates completion
+            structured = raw_state.get("structured_response")
+            if structured is not None:
+                response = Stage2StructuredResponse.model_validate(structured)
+                if response.status in (Stage2Status.COMPLETED, Stage2Status.FAILED):
+                    logger.info(
+                        "[Stage2DeepResearchAgent] completed at turn {} with status={}",
+                        turns_used,
+                        response.status.value,
+                    )
+                    break
+
+            # Check if new evidence was acquired and needs injection
+            if runtime.consume_evidence_update():
+                evidence_message = self._build_evidence_update_message(runtime)
+                if evidence_message is not None:
+                    # Append the agent's response and new evidence to continue
+                    if "messages" in raw_state:
+                        messages = raw_state["messages"]
+                    messages.append(evidence_message)
+                    logger.info(
+                        "[Stage2DeepResearchAgent] turn {}: injecting new evidence, continuing loop",
+                        turns_used,
+                    )
+                    continue
+
+            # No new evidence and no explicit continuation needed
+            break
+
+        logger.info(
+            "[Stage2DeepResearchAgent] finished after {} turns, tool_calls={}",
+            turns_used,
+            len(runtime.tool_trace),
+        )
+
         final_response = self._normalize_final_response(task, raw_state)
         return Stage2AgentResult(
             task=task,

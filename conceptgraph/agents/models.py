@@ -135,14 +135,14 @@ class Stage2DeepAgentConfig(BaseModel):
     """Runtime configuration for the DeepAgents-backed Stage-2 agent."""
 
     base_url: str = "https://genai-sg-og.tiktok-row.org/gpt/openapi/online/v2/crawl"
-    model_name: str = "gemini-2.5-pro"
-    api_key: str = "cD6AGSVHrzftqONPxsFmgkVEuVlBynRb_GPT_AK"
+    model_name: str = "gpt-5.2-2025-12-11"
+    api_key: str = "Eyt11Oeoj77MfGcMweDRODBsbYnPkWUp"
     api_version: str = "2024-03-01-preview"
     max_tokens: int = Field(default=10000, ge=1)
     temperature: float = 0.1
     timeout: int = Field(default=120, ge=1)
     max_retries: int = Field(default=2, ge=0)
-    include_thoughts: bool = True
+    include_thoughts: bool = False
     session_id: str = Field(default_factory=lambda: str(time.time()))
     extra_body: Dict[str, Any] = Field(default_factory=dict)
     max_images: int = Field(default=6, ge=1, le=12)

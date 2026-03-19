@@ -13,3 +13,4 @@
 - 这些文件是“背景知识”，不是最终真相。
 - 若与源码、脚本参数或最新提交冲突，以源码和最新改动为准。
 - 修改 pipeline 或 query 行为后，请同步更新对应 memory 文件。
+- 若任务直接涉及 Stage 2 agent，请在完成上述 memory 加载后继续阅读 `docs/stage2_agent_handoff.md`。

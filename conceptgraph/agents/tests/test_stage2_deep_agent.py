@@ -14,8 +14,12 @@ from conceptgraph.agents import (
     build_stage2_evidence_bundle,
 )
 from conceptgraph.agents.stage2_deep_agent import (
-    GeminiCompatibleAzureChatOpenAI,
+    ToolChoiceCompatibleAzureChatOpenAI,
     _Stage2RuntimeState,
+)
+from conceptgraph.agents.models import (
+    KeyframeEvidence,
+    Stage2EvidenceBundle,
 )
 from conceptgraph.query_scene.keyframe_selector import KeyframeResult, SceneObject
 
@@ -31,10 +35,10 @@ class _FakeGraph:
 
 
 class TestStage2DeepAgent(unittest.TestCase):
-    def test_gemini_compatible_client_maps_required_tool_choice_to_auto(self) -> None:
+    def test_tool_choice_compatible_client_maps_required_tool_choice_to_auto(self) -> None:
         with patch("langchain_openai.AzureChatOpenAI.bind_tools") as bind_tools_mock:
-            model = object.__new__(GeminiCompatibleAzureChatOpenAI)
-            GeminiCompatibleAzureChatOpenAI.bind_tools(
+            model = object.__new__(ToolChoiceCompatibleAzureChatOpenAI)
+            ToolChoiceCompatibleAzureChatOpenAI.bind_tools(
                 model,
                 tools=[],
                 tool_choice="any",
@@ -46,11 +50,12 @@ class TestStage2DeepAgent(unittest.TestCase):
         agent = Stage2DeepResearchAgent(
             config=Stage2DeepAgentConfig(
                 session_id="stage2-session",
+                include_thoughts=True,
                 extra_body={"custom_flag": "x"},
             )
         )
 
-        with patch("conceptgraph.agents.stage2_deep_agent.GeminiCompatibleAzureChatOpenAI") as azure_mock:
+        with patch("conceptgraph.agents.stage2_deep_agent.ToolChoiceCompatibleAzureChatOpenAI") as azure_mock:
             fake_llm = object()
             azure_mock.return_value = fake_llm
             llm = agent._get_llm()
@@ -65,6 +70,22 @@ class TestStage2DeepAgent(unittest.TestCase):
         self.assertEqual(kwargs["extra_body"]["session_id"], "stage2-session")
         self.assertTrue(kwargs["extra_body"]["thinking"]["include_thoughts"])
         self.assertEqual(kwargs["extra_body"]["custom_flag"], "x")
+
+    def test_get_llm_omits_thinking_block_when_disabled(self) -> None:
+        agent = Stage2DeepResearchAgent(
+            config=Stage2DeepAgentConfig(
+                session_id="stage2-session",
+                include_thoughts=False,
+            )
+        )
+
+        with patch("conceptgraph.agents.stage2_deep_agent.ToolChoiceCompatibleAzureChatOpenAI") as azure_mock:
+            fake_llm = object()
+            azure_mock.return_value = fake_llm
+            agent._get_llm()
+
+        kwargs = azure_mock.call_args.kwargs
+        self.assertEqual(kwargs["extra_body"], {"session_id": "stage2-session"})
 
     def test_build_stage2_evidence_bundle_extracts_hypothesis_and_context(self) -> None:
         result = KeyframeResult(
@@ -269,6 +290,120 @@ class TestStage2DeepAgent(unittest.TestCase):
         self.assertEqual(result.result.status, Stage2Status.COMPLETED)
         self.assertEqual(result.result.payload["answer"], "The pillow is on the sofa.")
         self.assertEqual(result.result.cited_frame_indices, [0])
+
+    def test_evidence_update_flag_triggers_image_injection_tracking(self) -> None:
+        """Verify that evidence updates are tracked for iterative refinement."""
+        bundle = Stage2EvidenceBundle(
+            scene_id="room0",
+            keyframes=[
+                KeyframeEvidence(keyframe_idx=0, image_path="/tmp/frame0.jpg"),
+            ],
+        )
+        runtime = _Stage2RuntimeState(bundle=bundle)
+
+        # Initially no evidence update
+        self.assertFalse(runtime.evidence_updated)
+        self.assertFalse(runtime.consume_evidence_update())
+
+        # Mark evidence updated
+        runtime.mark_evidence_updated()
+        self.assertTrue(runtime.evidence_updated)
+
+        # Consume resets the flag
+        self.assertTrue(runtime.consume_evidence_update())
+        self.assertFalse(runtime.evidence_updated)
+        self.assertFalse(runtime.consume_evidence_update())
+
+    def test_iterative_run_respects_max_reasoning_turns(self) -> None:
+        """Verify that the iterative loop respects max_reasoning_turns budget."""
+        agent = Stage2DeepResearchAgent()
+        task = Stage2TaskSpec(
+            task_type=Stage2TaskType.QA,
+            user_query="Where is the lamp?",
+            max_reasoning_turns=2,
+        )
+        bundle = build_stage2_evidence_bundle(
+            KeyframeResult(
+                query="lamp",
+                target_term="lamp",
+                anchor_term=None,
+                keyframe_indices=[],
+                keyframe_paths=[],
+                target_objects=[],
+                anchor_objects=[],
+                metadata={},
+            ),
+            scene_id="room0",
+        )
+
+        call_count = [0]
+
+        class _CountingGraph:
+            def __init__(self, response: dict):
+                self.response = response
+
+            def invoke(self, payload: dict) -> dict:
+                call_count[0] += 1
+                # Return incomplete status to force loop continuation
+                return {
+                    "structured_response": {
+                        "task_type": "qa",
+                        "status": "needs_more_evidence",
+                        "summary": "Need more views",
+                        "confidence": 0.3,
+                        "uncertainties": ["Lamp not visible"],
+                        "cited_frame_indices": [],
+                        "evidence_items": [],
+                        "plan": [],
+                        "payload": {},
+                    },
+                    "messages": [],
+                }
+
+        fake_graph = _CountingGraph({})
+
+        with patch.object(agent, "build_agent", return_value=(fake_graph, _Stage2RuntimeState(bundle))):
+            result = agent.run(task, bundle)
+
+        # Should stop at 1 invoke since no evidence_updated flag is set
+        # (the loop only continues when new evidence is injected)
+        self.assertEqual(call_count[0], 1)
+        self.assertEqual(result.result.status, Stage2Status.NEEDS_MORE_EVIDENCE)
+
+    def test_runtime_marks_evidence_updated_when_callback_returns_bundle(self) -> None:
+        """Verify tools mark evidence_updated when callbacks return new bundles."""
+        original_bundle = Stage2EvidenceBundle(
+            scene_id="room0",
+            keyframes=[
+                KeyframeEvidence(keyframe_idx=0, image_path="/tmp/frame0.jpg"),
+            ],
+        )
+        updated_bundle = Stage2EvidenceBundle(
+            scene_id="room0",
+            keyframes=[
+                KeyframeEvidence(keyframe_idx=0, image_path="/tmp/frame0.jpg"),
+                KeyframeEvidence(keyframe_idx=1, image_path="/tmp/frame1.jpg"),
+            ],
+        )
+
+        agent = Stage2DeepResearchAgent(
+            more_views_callback=lambda bundle, request: updated_bundle,
+        )
+        runtime = _Stage2RuntimeState(bundle=original_bundle.model_copy(deep=True))
+        tools = {tool.name: tool for tool in agent._build_runtime_tools(runtime)}
+
+        # Before calling the tool
+        self.assertFalse(runtime.evidence_updated)
+        self.assertEqual(len(runtime.bundle.keyframes), 1)
+
+        # Call the tool
+        tools["request_more_views"].invoke(
+            {"request_text": "Need wider angle", "frame_indices": [], "object_terms": []}
+        )
+
+        # After calling the tool
+        self.assertTrue(runtime.evidence_updated)
+        self.assertEqual(len(runtime.bundle.keyframes), 2)
 
 
 if __name__ == "__main__":

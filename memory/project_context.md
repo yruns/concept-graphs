@@ -33,5 +33,6 @@
   - 统一任务输出：`Stage2StructuredResponse`
   - planning 强度由 `plan_mode=off|brief|full` 控制
   - 工具层显式支持补证据与 hypothesis repair，而不是一次性多图问答
-  - Gemini 接入使用单 key 的 AzureOpenAI-compatible client，并通过 `extra_body.session_id` 打开 prompt caching
+  - 默认模型切到 `gpt-5.2-2025-12-11`；Gemini 保留为可选 override
+  - 模型接入使用单 key 的 AzureOpenAI-compatible client，并通过 `extra_body.session_id` 打开 prompt caching
 - 该方向的长期说明记录在 `memory/research_direction.md`，后续做第二阶段相关工作时应先读取。
