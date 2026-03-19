@@ -199,7 +199,10 @@
   - File: `conceptgraph/evaluation/ablations/run_oneshot_ablation.py`
   - Tests: `conceptgraph/evaluation/ablations/tests/test_run_oneshot_ablation.py` (44 tests passing)
   - Status: Complete with OneshotAblationRunner, cross-benchmark support, academic alignment
-- [ ] TASK-041: Ablation: + request_more_views only | Priority: 2 | Est: 2h
+- [x] TASK-041: Ablation: + request_more_views only | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/ablations/run_views_only_ablation.py`
+  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_views_only_ablation.py` (54 tests passing)
+  - Status: Complete with ViewsOnlyAblationRunner, enables single evidence-seeking tool for isolated contribution analysis
 - [ ] TASK-042: Ablation: + request_crops only | Priority: 2 | Est: 2h
 - [ ] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
 - [ ] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
@@ -246,6 +249,7 @@
 - [x] TASK-033: Run SQA3D experiments - all 3 conditions (67 tests)
 - [x] TASK-034: Run ScanRefer experiments - all 3 conditions (65 tests)
 - [x] TASK-040: Ablation: No tool calls (one-shot) (44 tests)
+- [x] TASK-041: Ablation: + request_more_views only (54 tests)
 
 ---
 
@@ -264,4 +268,4 @@
 
 ---
 
-*Last updated: 2026-03-20 04:30*
+*Last updated: 2026-03-20 04:50*

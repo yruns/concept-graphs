@@ -20,8 +20,16 @@ from conceptgraph.evaluation.ablations.run_oneshot_ablation import (
     OneshotAblationRunner,
     run_oneshot_ablation,
 )
+from conceptgraph.evaluation.ablations.run_views_only_ablation import (
+    ViewsOnlyAblationRunner,
+    run_views_only_ablation,
+    VIEWS_ONLY_ABLATION_CONFIG,
+)
 
 __all__ = [
     "OneshotAblationRunner",
     "run_oneshot_ablation",
+    "ViewsOnlyAblationRunner",
+    "run_views_only_ablation",
+    "VIEWS_ONLY_ABLATION_CONFIG",
 ]
