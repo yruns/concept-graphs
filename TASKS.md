@@ -224,10 +224,11 @@
   - File: `conceptgraph/evaluation/result_tables.py`
   - Tests: `conceptgraph/evaluation/tests/test_result_tables.py` (38 tests passing)
   - Status: Complete with mock data, LaTeX export, academic alignment
-- [ ] TASK-051: Create visualization figures | Priority: 3 | Est: 4h
-  - Detection drop stress test figure
-  - Tool usage distribution
-  - Confidence vs accuracy plot
+- [x] TASK-051: Create visualization figures | Priority: 3 | Est: 4h
+  - File: `conceptgraph/evaluation/visualizations.py`
+  - Tests: `conceptgraph/evaluation/tests/test_visualizations.py` (47 tests passing)
+  - Status: Complete with mock data support, detection drop stress test, tool usage distribution, confidence calibration
+  - Output: `results/figures/*.pdf`
 
 - [ ] TASK-052: Write experimental analysis section | Priority: 3 | Est: 8h
 - [ ] TASK-053: Draft related work comparison | Priority: 3 | Est: 6h
@@ -266,6 +267,7 @@
 - [x] TASK-043: Ablation: + hypothesis_repair only (67 tests)
 - [x] TASK-044: Ablation: + uncertainty output (63 tests)
 - [x] TASK-050: Generate result tables (Table 1, Table 2) (38 tests)
+- [x] TASK-051: Create visualization figures (47 tests)
 
 ---
 

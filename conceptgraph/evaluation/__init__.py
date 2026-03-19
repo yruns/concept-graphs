@@ -56,6 +56,18 @@ from .result_tables import (
     generate_all_tables,
     load_results_from_directory,
 )
+from .visualizations import (
+    DetectionDropDataPoint,
+    ToolUsageData,
+    ConfidenceAccuracyPoint,
+    generate_detection_drop_data,
+    generate_tool_usage_data,
+    generate_confidence_accuracy_data,
+    create_detection_drop_figure,
+    create_tool_usage_figure,
+    create_confidence_accuracy_figure,
+    create_all_figures,
+)
 
 __all__ = [
     # Batch evaluation
@@ -99,4 +111,15 @@ __all__ = [
     "generate_table2_ablation_results",
     "generate_all_tables",
     "load_results_from_directory",
+    # Visualizations
+    "DetectionDropDataPoint",
+    "ToolUsageData",
+    "ConfidenceAccuracyPoint",
+    "generate_detection_drop_data",
+    "generate_tool_usage_data",
+    "generate_confidence_accuracy_data",
+    "create_detection_drop_figure",
+    "create_tool_usage_figure",
+    "create_confidence_accuracy_figure",
+    "create_all_figures",
 ]
