@@ -36,7 +36,7 @@
     - [ ] Implement IoU-based evaluation (Acc@0.25, Acc@0.5)
     - [ ] Unit tests with >90% coverage
 
-- [!] TASK-004: EAI diagnostic benchmark loader | Priority: 2 | Est: 4h
+- [~] TASK-004: EAI diagnostic benchmark loader | Priority: 2 | Est: 4h
   - File: `conceptgraph/benchmarks/eai_loader.py`
   - Tests: `conceptgraph/benchmarks/tests/test_eai.py`
   - Depends: None
@@ -53,11 +53,11 @@
 
 ### Dataset Download
 
-- [!] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
+- [ ] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
   - Command: `download_openeqa("/data/benchmarks", include_frames=True)`
   - Note: Frames are ~50GB, start with metadata only first
 
-- [!] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
+- [ ] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
   - Command: `download_sqa3d("/data/benchmarks")`
   - Note: Requires ScanNet scenes for full evaluation
 
