@@ -26,7 +26,7 @@
   - Tests: `conceptgraph/benchmarks/tests/test_sqa3d.py` (41 tests passing)
   - Status: Complete with situation context
 
-- [!] TASK-003: ScanRefer benchmark loader | Priority: 1 | Est: 3h
+- [~] TASK-003: ScanRefer benchmark loader | Priority: 1 | Est: 3h
   - File: `conceptgraph/benchmarks/scanrefer_loader.py`
   - Tests: `conceptgraph/benchmarks/tests/test_scanrefer.py`
   - Depends: None
@@ -36,7 +36,7 @@
     - [ ] Implement IoU-based evaluation (Acc@0.25, Acc@0.5)
     - [ ] Unit tests with >90% coverage
 
-- [~] TASK-004: EAI diagnostic benchmark loader | Priority: 2 | Est: 4h
+- [x] TASK-004: EAI diagnostic benchmark loader | Priority: 2 | Est: 4h
   - File: `conceptgraph/benchmarks/eai_loader.py`
   - Tests: `conceptgraph/benchmarks/tests/test_eai.py`
   - Depends: None
@@ -61,7 +61,7 @@
   - Command: `download_sqa3d("/data/benchmarks")`
   - Note: Requires ScanNet scenes for full evaluation
 
-- [!] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
+- [ ] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
   - URL: https://github.com/daveredrum/ScanRefer
   - Note: Shares ScanNet dependency with SQA3D
 
