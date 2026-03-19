@@ -1,0 +1,542 @@
+{
+  "experiment": "stage1_only_baseline",
+  "benchmark": "openeqa",
+  "run_id": "openeqa_stage1_20260320_033046",
+  "timestamp": "2026-03-20T03:30:46.832171",
+  "config": {
+    "stage2_enabled": false,
+    "ablation_tag": "stage1_only",
+    "stage1_k": 3,
+    "stage1_model": "gpt-5.2-2025-12-11",
+    "max_samples": 50,
+    "max_workers": 4,
+    "use_mock": true
+  },
+  "summary": {
+    "total_samples": 50,
+    "stage1_success": 50,
+    "stage1_failure": 0,
+    "stage1_success_rate": 1.0,
+    "avg_stage1_latency_ms": 0.03857612609863281,
+    "total_duration_seconds": 0.007585
+  },
+  "hypothesis_distribution": {
+    "proxy": 15,
+    "context": 15,
+    "multi_object": 10,
+    "direct": 10
+  },
+  "keyframe_statistics": {
+    "avg_keyframes": 3.0,
+    "min_keyframes": 3,
+    "max_keyframes": 3,
+    "total_keyframes": 150
+  },
+  "per_sample_results": [
+    {
+      "sample_id": "mock_openeqa_0004",
+      "query": "What is next to the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.052928924560546875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0000",
+      "query": "What is on the table?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.11897087097167969,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0002",
+      "query": "How many sofas are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.06198883056640625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0001",
+      "query": "What color is the table?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.16117095947265625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0005",
+      "query": "What is between the plant and pillow?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.10228157043457031,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0003",
+      "query": "Where is the lamp?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.057697296142578125,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0006",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.04100799560546875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0007",
+      "query": "Was there a pillow in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.0400543212890625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0008",
+      "query": "Is the chair open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.031232833862304688,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0009",
+      "query": "What is inside the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.027894973754882812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0010",
+      "query": "What is on the desk?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.03361701965332031,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0011",
+      "query": "What color is the lamp?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.06818771362304688,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0012",
+      "query": "How many books are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.027894973754882812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0013",
+      "query": "Where is the cup?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.02574920654296875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0014",
+      "query": "What is next to the plant?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.028133392333984375,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0015",
+      "query": "What is between the chair and table?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.02574920654296875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0016",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.027894973754882812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0017",
+      "query": "Was there a table in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0018",
+      "query": "Is the sofa open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.027894973754882812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0019",
+      "query": "What is inside the plant?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.064849853515625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0020",
+      "query": "What is on the shelf?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.02574920654296875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0021",
+      "query": "What color is the cup?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.027179718017578125,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0022",
+      "query": "How many plants are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0023",
+      "query": "Where is the pillow?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.02574920654296875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0024",
+      "query": "What is next to the chair?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.027894973754882812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0025",
+      "query": "What is between the sofa and lamp?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0026",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.06198883056640625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0027",
+      "query": "Was there a lamp in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.026226043701171875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0028",
+      "query": "Is the book open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0029",
+      "query": "What is inside the chair?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0030",
+      "query": "What is on the table?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.029087066650390625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0031",
+      "query": "What color is the pillow?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.025272369384765625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0032",
+      "query": "How many chairs are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0033",
+      "query": "Where is the table?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.026226043701171875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0034",
+      "query": "What is next to the sofa?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "multi_object",
+      "stage1_latency_ms": 0.06198883056640625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0035",
+      "query": "What is between the book and cup?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.025272369384765625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0036",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0037",
+      "query": "Was there a cup in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0038",
+      "query": "Is the plant open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.024080276489257812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0039",
+      "query": "What is inside the sofa?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "direct",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0040",
+      "query": "What is on the desk?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.024080276489257812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0041",
+      "query": "What color is the table?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.025033950805664062,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0042",
+      "query": "How many sofas are there?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.030040740966796875,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0043",
+      "query": "Where is the lamp?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0044",
+      "query": "What is next to the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "proxy",
+      "stage1_latency_ms": 0.025987625122070312,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0045",
+      "query": "What is between the plant and pillow?",
+      "scene_id": "scene_001",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.0247955322265625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0046",
+      "query": "What did I see in the bedroom?",
+      "scene_id": "scene_002",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.024080276489257812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0047",
+      "query": "Was there a pillow in the room?",
+      "scene_id": "scene_003",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.02384185791015625,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0048",
+      "query": "Is the chair open or closed?",
+      "scene_id": "room0",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.024080276489257812,
+      "stage1_error": null
+    },
+    {
+      "sample_id": "mock_openeqa_0049",
+      "query": "What is inside the book?",
+      "scene_id": "room1",
+      "stage1_success": true,
+      "stage1_keyframe_count": 3,
+      "stage1_hypothesis_kind": "context",
+      "stage1_latency_ms": 0.05984306335449219,
+      "stage1_error": null
+    }
+  ],
+  "academic_notes": {
+    "purpose": "Baseline for evidence-seeking VLM agent comparison",
+    "claim_support": "Shows retrieval-only performance without Stage 2 reasoning",
+    "expected_improvement_from": "Stage 2 adaptive evidence acquisition"
+  }
+}

@@ -150,9 +150,12 @@
 
 ## Phase 4: Baseline Experiments (Priority 2)
 
-- [ ] TASK-030: Run Stage 1 only baseline on OpenEQA | Priority: 2 | Est: 2h
+- [x] TASK-030: Run Stage 1 only baseline on OpenEQA | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/scripts/run_openeqa_stage1_only.py`
+  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_stage1_only.py` (17 tests passing)
   - Depends: TASK-006, TASK-020
   - Output: `results/baselines/openeqa_stage1_only.json`
+  - Status: Complete with mock data support and CLI interface
 
 - [ ] TASK-031: Run one-shot VLM baseline on OpenEQA | Priority: 2 | Est: 2h
   - Depends: TASK-006, TASK-020
@@ -214,6 +217,7 @@
 - [x] TASK-021: Implement metrics aggregation (56 tests)
 - [x] TASK-022: Create ablation configuration system (60 tests)
 - [x] TASK-023: Integrate with trace server for logging (33 tests)
+- [x] TASK-030: Run Stage 1 only baseline on OpenEQA (17 tests)
 
 ---
 
