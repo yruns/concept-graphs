@@ -181,8 +181,15 @@
   - Output: `results/experiments/sqa3d_*.json`
   - Status: Complete with mock data support, situation-aware context, all three experimental conditions
 
-- [ ] TASK-034: Run ScanRefer experiments | Priority: 2 | Est: 4h
+- [x] TASK-034: Run ScanRefer experiments | Priority: 2 | Est: 4h
+  - Files:
+    - `conceptgraph/evaluation/scripts/run_scanrefer_stage1_only.py` (Stage 1 only baseline)
+    - `conceptgraph/evaluation/scripts/run_scanrefer_oneshot.py` (One-shot VLM baseline)
+    - `conceptgraph/evaluation/scripts/run_scanrefer_stage2_full.py` (Full Stage 2 agent)
+  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_scanrefer_*.py` (65 tests passing)
   - Depends: TASK-008, TASK-003, TASK-020
+  - Output: `results/experiments/scanrefer_*.json`
+  - Status: Complete with mock data support, 3D bounding box prediction, all three experimental conditions
 
 ---
 
@@ -234,6 +241,7 @@
 - [x] TASK-031: Run one-shot VLM baseline on OpenEQA (21 tests)
 - [x] TASK-032: Run full Stage 2 agent on OpenEQA (33 tests)
 - [x] TASK-033: Run SQA3D experiments - all 3 conditions (67 tests)
+- [x] TASK-034: Run ScanRefer experiments - all 3 conditions (65 tests)
 
 ---
 
@@ -243,13 +251,13 @@
 |--------|---------|--------|
 | OpenEQA tests | 26 | 26 |
 | SQA3D tests | 41 | 41 |
-| ScanRefer tests | 0 | 30+ |
+| ScanRefer tests | 65 | 65 |
 | Batch Eval tests | 33 | 33 |
 | Ablation Config tests | 60 | 60 |
 | Trace Integration tests | 33 | 33 |
 | Total test coverage | ~70% | 80% |
-| Benchmark loaders | 2/4 | 4/4 |
+| Benchmark loaders | 4/4 | 4/4 |
 
 ---
 
-*Last updated: 2026-03-20 04:15*
+*Last updated: 2026-03-20 04:30*

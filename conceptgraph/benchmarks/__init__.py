@@ -8,9 +8,48 @@ Supported benchmarks:
 """
 
 from .openeqa_loader import OpenEQADataset, OpenEQASample, download_openeqa
+from .scanrefer_loader import (
+    BoundingBox3D,
+    ScanReferDataset,
+    ScanReferEvaluationResult,
+    ScanReferSample,
+    compute_iou_3d,
+    compute_scanrefer_metrics,
+    compute_scanrefer_metrics_by_category,
+    download_scanrefer,
+    evaluate_scanrefer,
+)
+from .sqa3d_loader import (
+    SQA3DDataset,
+    SQA3DEvaluationResult,
+    SQA3DSample,
+    SQA3DSituation,
+    compute_sqa3d_metrics,
+    download_sqa3d,
+    evaluate_sqa3d,
+)
 
 __all__ = [
+    # OpenEQA
     "OpenEQADataset",
     "OpenEQASample",
     "download_openeqa",
+    # SQA3D
+    "SQA3DDataset",
+    "SQA3DEvaluationResult",
+    "SQA3DSample",
+    "SQA3DSituation",
+    "compute_sqa3d_metrics",
+    "download_sqa3d",
+    "evaluate_sqa3d",
+    # ScanRefer
+    "BoundingBox3D",
+    "ScanReferDataset",
+    "ScanReferEvaluationResult",
+    "ScanReferSample",
+    "compute_iou_3d",
+    "compute_scanrefer_metrics",
+    "compute_scanrefer_metrics_by_category",
+    "download_scanrefer",
+    "evaluate_scanrefer",
 ]

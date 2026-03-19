@@ -1006,3 +1006,50 @@ def adapt_openeqa_samples(samples: List[Any]) -> List[OpenEQASampleAdapter]:
 def adapt_sqa3d_samples(samples: List[Any]) -> List[SQA3DSampleAdapter]:
     """Adapt SQA3D samples to EvalSample protocol."""
     return [SQA3DSampleAdapter(_sample=s) for s in samples]
+
+
+@dataclass
+class ScanReferSampleAdapter:
+    """Adapter to make ScanRefer samples conform to EvalSample protocol.
+
+    ScanRefer is a visual grounding benchmark, so the task_type is
+    'visual_grounding' and the ground_truth contains the target bounding box.
+    """
+
+    _sample: Any  # ScanReferSample from benchmarks module
+
+    @property
+    def sample_id(self) -> str:
+        return self._sample.sample_id
+
+    @property
+    def query(self) -> str:
+        # Use the referring expression as the query
+        return self._sample.description
+
+    @property
+    def task_type(self) -> str:
+        return "visual_grounding"
+
+    @property
+    def ground_truth(self) -> Dict[str, Any]:
+        """Return ground truth bounding box as dict."""
+        return {
+            "object_id": self._sample.object_id,
+            "object_name": self._sample.object_name,
+            "bbox": self._sample.target_bbox.to_dict(),
+        }
+
+    @property
+    def scene_id(self) -> str:
+        return self._sample.scene_id
+
+    @property
+    def object_name(self) -> str:
+        """Additional property for grounding tasks."""
+        return self._sample.object_name
+
+
+def adapt_scanrefer_samples(samples: List[Any]) -> List[ScanReferSampleAdapter]:
+    """Adapt ScanRefer samples to EvalSample protocol."""
+    return [ScanReferSampleAdapter(_sample=s) for s in samples]
