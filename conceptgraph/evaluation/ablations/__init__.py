@@ -30,6 +30,11 @@ from conceptgraph.evaluation.ablations.run_crops_only_ablation import (
     run_crops_only_ablation,
     CROPS_ONLY_ABLATION_CONFIG,
 )
+from conceptgraph.evaluation.ablations.run_hypothesis_repair_only_ablation import (
+    HypothesisRepairOnlyAblationRunner,
+    run_hypothesis_repair_only_ablation,
+    HYPOTHESIS_REPAIR_ONLY_ABLATION_CONFIG,
+)
 
 __all__ = [
     "OneshotAblationRunner",
@@ -40,4 +45,7 @@ __all__ = [
     "CropsOnlyAblationRunner",
     "run_crops_only_ablation",
     "CROPS_ONLY_ABLATION_CONFIG",
+    "HypothesisRepairOnlyAblationRunner",
+    "run_hypothesis_repair_only_ablation",
+    "HYPOTHESIS_REPAIR_ONLY_ABLATION_CONFIG",
 ]

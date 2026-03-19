@@ -207,7 +207,10 @@
   - File: `conceptgraph/evaluation/ablations/run_crops_only_ablation.py`
   - Tests: `conceptgraph/evaluation/ablations/tests/test_run_crops_only_ablation.py` (60 tests passing)
   - Status: Complete with CropsOnlyAblationRunner, enables object-level cropping for fine-grained evidence acquisition
-- [ ] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
+- [x] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/ablations/run_hypothesis_repair_only_ablation.py`
+  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_hypothesis_repair_only_ablation.py` (67 tests passing)
+  - Status: Complete with HypothesisRepairOnlyAblationRunner, enables symbolic-to-visual repair for hypothesis switching
 - [ ] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
 
 ---
@@ -254,6 +257,7 @@
 - [x] TASK-040: Ablation: No tool calls (one-shot) (44 tests)
 - [x] TASK-041: Ablation: + request_more_views only (54 tests)
 - [x] TASK-042: Ablation: + request_crops only (60 tests)
+- [x] TASK-043: Ablation: + hypothesis_repair only (67 tests)
 
 ---
 
