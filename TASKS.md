@@ -203,7 +203,10 @@
   - File: `conceptgraph/evaluation/ablations/run_views_only_ablation.py`
   - Tests: `conceptgraph/evaluation/ablations/tests/test_run_views_only_ablation.py` (54 tests passing)
   - Status: Complete with ViewsOnlyAblationRunner, enables single evidence-seeking tool for isolated contribution analysis
-- [ ] TASK-042: Ablation: + request_crops only | Priority: 2 | Est: 2h
+- [x] TASK-042: Ablation: + request_crops only | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/ablations/run_crops_only_ablation.py`
+  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_crops_only_ablation.py` (60 tests passing)
+  - Status: Complete with CropsOnlyAblationRunner, enables object-level cropping for fine-grained evidence acquisition
 - [ ] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
 - [ ] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
 
@@ -250,6 +253,7 @@
 - [x] TASK-034: Run ScanRefer experiments - all 3 conditions (65 tests)
 - [x] TASK-040: Ablation: No tool calls (one-shot) (44 tests)
 - [x] TASK-041: Ablation: + request_more_views only (54 tests)
+- [x] TASK-042: Ablation: + request_crops only (60 tests)
 
 ---
 

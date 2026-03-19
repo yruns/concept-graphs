@@ -25,6 +25,11 @@ from conceptgraph.evaluation.ablations.run_views_only_ablation import (
     run_views_only_ablation,
     VIEWS_ONLY_ABLATION_CONFIG,
 )
+from conceptgraph.evaluation.ablations.run_crops_only_ablation import (
+    CropsOnlyAblationRunner,
+    run_crops_only_ablation,
+    CROPS_ONLY_ABLATION_CONFIG,
+)
 
 __all__ = [
     "OneshotAblationRunner",
@@ -32,4 +37,7 @@ __all__ = [
     "ViewsOnlyAblationRunner",
     "run_views_only_ablation",
     "VIEWS_ONLY_ABLATION_CONFIG",
+    "CropsOnlyAblationRunner",
+    "run_crops_only_ablation",
+    "CROPS_ONLY_ABLATION_CONFIG",
 ]
