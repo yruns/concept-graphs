@@ -26,6 +26,19 @@ from .metrics import (
     export_tool_usage_table,
     export_summary_statistics,
 )
+from .ablation_config import (
+    AblationConfig,
+    ToolConfig,
+    AgentConfig,
+    Stage1Config,
+    Stage2Config,
+    EvaluationConfig,
+    get_preset_config,
+    get_all_presets,
+    generate_ablation_matrix,
+    load_experiment_configs,
+    save_ablation_matrix,
+)
 
 __all__ = [
     # Batch evaluation
@@ -42,4 +55,16 @@ __all__ = [
     "export_to_latex_table",
     "export_tool_usage_table",
     "export_summary_statistics",
+    # Ablation configuration
+    "AblationConfig",
+    "ToolConfig",
+    "AgentConfig",
+    "Stage1Config",
+    "Stage2Config",
+    "EvaluationConfig",
+    "get_preset_config",
+    "get_all_presets",
+    "generate_ablation_matrix",
+    "load_experiment_configs",
+    "save_ablation_matrix",
 ]
