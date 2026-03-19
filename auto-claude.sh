@@ -128,23 +128,35 @@ get_next_task() {
 # Get task details
 get_task_details() {
     local task_id="$1"
-    # Extract everything from the task line until next task or section
-    awk "/$task_id/,/^- \[|^##|^---/" "$TASKS_FILE" | head -n -1
+    # Extract task block: from task line until next task, section header, or separator
+    awk "
+        /$task_id/ { found=1 }
+        found && /^- \[/ && !/$task_id/ { exit }
+        found && /^##/ { exit }
+        found && /^---/ { exit }
+        found { print }
+    " "$TASKS_FILE"
 }
 
 # Check if task has unmet dependencies
 check_dependencies() {
     local task_id="$1"
-    local deps=$(grep -A5 "$task_id" "$TASKS_FILE" | grep "Depends:" | sed 's/.*Depends: //')
+    # Get 10 lines after this task and find Depends line
+    local deps=$(awk "/$task_id/,/^- \[/{if(/Depends:/)print}" "$TASKS_FILE" | head -1 | sed 's/.*Depends: *//')
 
-    if [ -z "$deps" ] || [ "$deps" = "None" ]; then
+    if [ -z "$deps" ] || [ "$deps" = "None" ] || [[ "$deps" =~ ^[[:space:]]*$ ]]; then
         return 0  # No dependencies
     fi
 
     # Check each dependency
     for dep in $(echo "$deps" | tr ',' ' '); do
         dep=$(echo "$dep" | xargs)  # Trim whitespace
-        if grep -q "\[ \] $dep" "$TASKS_FILE"; then
+        # Skip empty deps or self-reference
+        [ -z "$dep" ] && continue
+        [ "$dep" = "$task_id" ] && continue
+
+        # Check if dependency is incomplete (marked with [ ])
+        if grep -q "^- \[ \] $dep" "$TASKS_FILE"; then
             log WARN "Task $task_id blocked by incomplete dependency: $dep"
             return 1
         fi
