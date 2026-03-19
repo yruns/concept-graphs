@@ -157,9 +157,12 @@
   - Output: `results/baselines/openeqa_stage1_only.json`
   - Status: Complete with mock data support and CLI interface
 
-- [ ] TASK-031: Run one-shot VLM baseline on OpenEQA | Priority: 2 | Est: 2h
+- [x] TASK-031: Run one-shot VLM baseline on OpenEQA | Priority: 2 | Est: 2h
+  - File: `conceptgraph/evaluation/scripts/run_openeqa_oneshot.py`
+  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_oneshot.py` (21 tests passing)
   - Depends: TASK-006, TASK-020
   - Output: `results/baselines/openeqa_oneshot.json`
+  - Status: Complete with mock data support and CLI interface
 
 - [ ] TASK-032: Run full Stage 2 agent on OpenEQA | Priority: 2 | Est: 4h
   - Depends: TASK-006, TASK-020, TASK-010, TASK-011
@@ -218,6 +221,7 @@
 - [x] TASK-022: Create ablation configuration system (60 tests)
 - [x] TASK-023: Integrate with trace server for logging (33 tests)
 - [x] TASK-030: Run Stage 1 only baseline on OpenEQA (17 tests)
+- [x] TASK-031: Run one-shot VLM baseline on OpenEQA (21 tests)
 
 ---
 
@@ -236,4 +240,4 @@
 
 ---
 
-*Last updated: 2026-03-20 03:26*
+*Last updated: 2026-03-20 03:40*

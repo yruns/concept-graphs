@@ -1,0 +1,19 @@
+Evaluation Run: openeqa_oneshot_20260320_033941
+Benchmark: openeqa
+Ablation: no_views_no_crops_no_repair_oneshot
+============================================================
+
+Total Samples: 50
+Successful: 50
+Failed Stage 1: 0
+Failed Stage 2: 0
+Success Rate: 100.0%
+
+Avg Stage 1 Latency: 0.0ms
+Avg Stage 2 Latency: 1.3ms
+Avg Stage 2 Confidence: 0.652
+Avg Tool Calls: 0.00
+Samples with Tool Use: 0
+Samples with Insufficient Evidence: 6
+
+Total Duration: 0.0s
