@@ -235,7 +235,11 @@
   - Tests: `conceptgraph/evaluation/tests/test_experimental_analysis.py` (66 tests passing)
   - Output: `docs/paper/experimental_analysis.tex`
   - Status: Complete with mock data support, LaTeX generation, all 4 academic claims validated
-- [ ] TASK-053: Draft related work comparison | Priority: 3 | Est: 6h
+- [x] TASK-053: Draft related work comparison | Priority: 3 | Est: 6h
+  - File: `conceptgraph/evaluation/related_work.py`
+  - Tests: `conceptgraph/evaluation/tests/test_related_work.py` (49 tests passing)
+  - Output: `docs/paper/related_work.tex`
+  - Status: Complete with method comparison tables, benchmark summaries, differentiation analysis
 - [ ] TASK-054: Academic positioning document | Priority: 3 | Est: 4h
 
 ---

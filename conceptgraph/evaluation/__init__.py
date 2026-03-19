@@ -82,6 +82,30 @@ from .experimental_analysis import (
     generate_calibration_analysis,
     generate_experimental_analysis_section,
 )
+from .related_work import (
+    # Enums
+    TaskType,
+    EvidenceAcquisition,
+    RepresentationType,
+    Venue,
+    # Data structures
+    BenchmarkResult,
+    RelatedMethod,
+    DifferentiationPoint,
+    RelatedWorkSection,
+    # Method factories
+    create_all_methods,
+    create_our_method,
+    create_differentiation_points,
+    # Table generation
+    generate_comparison_table,
+    generate_benchmark_comparison_table,
+    # Section generation
+    generate_related_work_section,
+    # Output
+    save_related_work_section,
+    create_related_work_summary,
+)
 
 __all__ = [
     # Batch evaluation
@@ -149,4 +173,21 @@ __all__ = [
     "generate_tool_usage_analysis",
     "generate_calibration_analysis",
     "generate_experimental_analysis_section",
+    # Related Work
+    "TaskType",
+    "EvidenceAcquisition",
+    "RepresentationType",
+    "Venue",
+    "BenchmarkResult",
+    "RelatedMethod",
+    "DifferentiationPoint",
+    "RelatedWorkSection",
+    "create_all_methods",
+    "create_our_method",
+    "create_differentiation_points",
+    "generate_comparison_table",
+    "generate_benchmark_comparison_table",
+    "generate_related_work_section",
+    "save_related_work_section",
+    "create_related_work_summary",
 ]
