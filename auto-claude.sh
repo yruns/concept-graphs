@@ -197,7 +197,7 @@ mark_needs_review() {
 run_claude() {
     local prompt="$1"
     local log_file="$2"
-    local timeout="${3:-600}"  # 10 minute default timeout
+    local max_time="${3:-1800}"  # 10 minute default
 
     if [ "$DRY_RUN" = true ]; then
         log INFO "[DRY-RUN] Would execute Claude with prompt (${#prompt} chars)"
@@ -206,10 +206,24 @@ run_claude() {
         return 0
     fi
 
-    # Execute with timeout
-    echo "$prompt" | timeout "$timeout" ttadk code --model "$MODEL" \
-        -a "--dangerously-skip-permissions --print --output-format stream-json" \
-        2>&1 | tee -a "$log_file"
+    # macOS doesn't have timeout, use gtimeout if available, otherwise run without timeout
+    local timeout_cmd=""
+    if command -v gtimeout &> /dev/null; then
+        timeout_cmd="gtimeout $max_time"
+    elif command -v timeout &> /dev/null; then
+        timeout_cmd="timeout $max_time"
+    fi
+
+    # Execute Claude
+    if [ -n "$timeout_cmd" ]; then
+        echo "$prompt" | $timeout_cmd ttadk code --model "$MODEL" \
+            -a "--dangerously-skip-permissions --print --output-format stream-json" \
+            2>&1 | tee -a "$log_file"
+    else
+        echo "$prompt" | ttadk code --model "$MODEL" \
+            -a "--dangerously-skip-permissions --print --output-format stream-json" \
+            2>&1 | tee -a "$log_file"
+    fi
 
     return ${PIPESTATUS[1]}
 }

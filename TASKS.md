@@ -53,15 +53,15 @@
 
 ### Dataset Download
 
-- [~] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
+- [x] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
   - Command: `download_openeqa("/data/benchmarks", include_frames=True)`
   - Note: Frames are ~50GB, start with metadata only first
 
-- [ ] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
+- [~] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
   - Command: `download_sqa3d("/data/benchmarks")`
   - Note: Requires ScanNet scenes for full evaluation
 
-- [ ] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
+- [~] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
   - URL: https://github.com/daveredrum/ScanRefer
   - Note: Shares ScanNet dependency with SQA3D
 
@@ -71,7 +71,7 @@
 
 ### Tool Implementation
 
-- [ ] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
+- [~] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
   - File: `conceptgraph/agents/tools/request_crops.py`
   - Depends: Stage 1 object detection output
   - Acceptance:
