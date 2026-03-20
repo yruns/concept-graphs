@@ -57,13 +57,15 @@
   - Command: `download_openeqa("/data/benchmarks", include_frames=True)`
   - Note: Frames are ~50GB, start with metadata only first
 
-- [~] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
+- [x] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
   - Command: `download_sqa3d("/data/benchmarks")`
   - Note: Requires ScanNet scenes for full evaluation
+  - Status: Complete - official format with questions + annotations files
 
-- [~] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
+- [x] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
   - URL: https://github.com/daveredrum/ScanRefer
   - Note: Shares ScanNet dependency with SQA3D
+  - Status: Complete - test split downloaded
 
 ---
 

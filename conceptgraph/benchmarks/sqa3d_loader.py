@@ -121,7 +121,36 @@ class SQA3DDataset:
         """
         data_root = Path(data_root)
 
-        # SQA3D stores data in data/sqa_task/
+        # Try official SQA3D format first (separate questions + annotations files)
+        questions_path = (
+            data_root
+            / "assets"
+            / "data"
+            / "sqa_task"
+            / "balanced"
+            / f"v1_balanced_questions_{split}_scannetv2.json"
+        )
+        annotations_path = (
+            data_root
+            / "assets"
+            / "data"
+            / "sqa_task"
+            / "balanced"
+            / f"v1_balanced_sqa_annotations_{split}_scannetv2.json"
+        )
+
+        if questions_path.exists() and annotations_path.exists():
+            return cls._load_official_format(
+                data_root,
+                questions_path,
+                annotations_path,
+                split,
+                question_type,
+                scene_id,
+                max_samples,
+            )
+
+        # Fallback to simplified single-file format
         json_path = data_root / "data" / "sqa_task" / f"balanced_{split}_set.json"
 
         # Try alternative paths
@@ -132,13 +161,22 @@ class SQA3DDataset:
 
         if not json_path.exists():
             raise FileNotFoundError(
-                f"SQA3D data file not found: {json_path}. "
+                f"SQA3D data file not found. Tried:\n"
+                f"  - {questions_path}\n"
+                f"  - {json_path}\n"
                 "Please download the dataset first using download_sqa3d()."
             )
 
         logger.info(f"Loading SQA3D from {json_path}")
         with open(json_path) as f:
             data = json.load(f)
+
+        # Handle wrapped format (dict with 'annotations' or 'questions' key)
+        if isinstance(data, dict):
+            if "annotations" in data:
+                data = data["annotations"]
+            elif "questions" in data:
+                data = data["questions"]
 
         samples: list[SQA3DSample] = []
 
@@ -195,6 +233,112 @@ class SQA3DDataset:
                 break
 
         logger.info(f"Loaded {len(samples)} SQA3D samples")
+        return cls(samples, data_root, split)
+
+    @classmethod
+    def _load_official_format(
+        cls,
+        data_root: Path,
+        questions_path: Path,
+        annotations_path: Path,
+        split: str,
+        question_type: Optional[str],
+        scene_id: Optional[str],
+        max_samples: Optional[int],
+    ) -> "SQA3DDataset":
+        """Load from official SQA3D format (separate questions + annotations).
+
+        The official format has:
+        - questions file: contains question_id, question, situation, scene_id
+        - annotations file: contains question_id, answers, position, rotation
+        """
+        logger.info(f"Loading SQA3D official format from {questions_path.parent}")
+
+        with open(questions_path) as f:
+            questions_data = json.load(f)
+        with open(annotations_path) as f:
+            annotations_data = json.load(f)
+
+        # Build lookup from question_id to annotation
+        annotations_by_id = {
+            ann["question_id"]: ann for ann in annotations_data.get("annotations", [])
+        }
+
+        samples: list[SQA3DSample] = []
+
+        for q in questions_data.get("questions", []):
+            q_id = q.get("question_id")
+            item_scene_id = q.get("scene_id", "")
+
+            # Apply scene filter
+            if scene_id and item_scene_id != scene_id:
+                continue
+
+            # Get question text and infer type
+            question_text = q.get("question", "")
+            item_question_type = _infer_question_type(question_text)
+            if question_type and item_question_type != question_type:
+                continue
+
+            # Get annotation for this question
+            ann = annotations_by_id.get(q_id, {})
+
+            # Parse situation - use the text description from questions file
+            situation_text = q.get("situation", "")
+            position = ann.get("position", {})
+            rotation = ann.get("rotation", {})
+
+            situation = SQA3DSituation(
+                position=[
+                    position.get("x", 0.0),
+                    position.get("y", 0.0),
+                    position.get("z", 0.0),
+                ],
+                orientation=[
+                    rotation.get("_x", 0.0),
+                    rotation.get("_y", 0.0),
+                    rotation.get("_z", 0.0),
+                ],
+                room_description=situation_text,
+                reference_objects=[],
+            )
+
+            # Parse answers from annotation
+            answers_list = ann.get("answers", [])
+            if isinstance(answers_list, list) and answers_list:
+                if isinstance(answers_list[0], dict):
+                    answers = [a.get("answer", "") for a in answers_list]
+                else:
+                    answers = [str(a) for a in answers_list]
+            else:
+                answers = [""]
+
+            # Filter empty answers
+            answers = [a for a in answers if a] or [""]
+
+            # Determine answer type
+            answer_type_raw = ann.get("answer_type", "other")
+            if len(answers[0].split()) == 1:
+                answer_type = "single_word"
+            else:
+                answer_type = "multi_word"
+
+            sample = SQA3DSample(
+                question_id=str(q_id),
+                question=question_text,
+                answers=answers,
+                situation=situation,
+                scene_id=item_scene_id,
+                question_type=item_question_type,
+                answer_type=answer_type,
+                choices=[],
+            )
+            samples.append(sample)
+
+            if max_samples and len(samples) >= max_samples:
+                break
+
+        logger.info(f"Loaded {len(samples)} SQA3D samples (official format)")
         return cls(samples, data_root, split)
 
     def __len__(self) -> int:
