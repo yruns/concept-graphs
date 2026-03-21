@@ -377,3 +377,109 @@ memory/
 ## 10. 一句话总结
 
 macOS 环境已完成：benchmark 数据下载、帧提取、adapter 实现。Linux CUDA 环境需要完成：ScanNet 完整数据获取、GroundedSAM 检测、3D 融合、full pipeline 评估。Frame-Based 模式可以在任何环境先行验证 Stage 2 效果。
+
+---
+
+## 11. 2026-03-20 Linux CUDA 接力进展补充
+
+本次接力已完成以下与“下载数据集 + 构建 scene graph”直接相关的准备工作：
+
+### 11.1 新增 benchmark 根目录
+
+统一使用：
+
+```text
+data/benchmark/
+```
+
+而不是旧 handoff 中的 `data/benchmarks/`。
+
+### 11.2 已落地的公开 benchmark 资产
+
+- `data/benchmark/open-eqa/`
+  - 官方 repo + `data/open-eqa-v0.json`
+- `data/benchmark/SQA3D/`
+  - 官方 repo
+  - `assets/data/sqa_task/balanced/*.json`
+  - `assets/data/sqa_task/answer_dict.json`
+- `data/benchmark/ScanRefer/`
+  - 官方 repo
+  - `data/ScanRefer_filtered_test.json`（公开 benchmark test）
+
+说明：
+
+- `ScanRefer_filtered_val.json` 仍不在公开 repo 中；当前 manifest 对 `ScanRefer val` 先 fallback 到官方 `scannetv2_val.txt`
+- 对“下载最小 ScanNet raw 子集以构图”这件事，这个 fallback 已足够，因为：
+  - `SQA3D val/test` scene 全包含在 `ScanRefer val/test` scene 里
+  - `OpenEQA ScanNet` scene 也全包含在 `ScanRefer val/test` scene 里
+
+### 11.3 最小 ScanNet raw 子集已收敛
+
+通过 `conceptgraph/scripts/build_multibenchmark_scene_manifest.py` 统计得到：
+
+- `ScanRefer val`: 312 scenes
+- `ScanRefer test`: 97 scenes
+- `SQA3D val+test`: 142 scenes
+- `OpenEQA ScanNet`: 89 scenes
+- 最终 union：**409 scenes**
+
+输出文件：
+
+```text
+data/benchmark/manifests/scannet_scene_manifest.json
+data/benchmark/manifests/scannet_union_val_test.txt
+data/benchmark/manifests/benchmark_scene_coverage.png
+```
+
+### 11.4 新增脚本
+
+```text
+bashes/benchmark_data/1_download_public_assets.sh
+bashes/scannet_benchmark/0_download_scannet_raw_subset.sh
+bashes/scannet_benchmark/0_download_scannet_val_minimal.sh
+bashes/scannet_benchmark/1_prepare_replica_like_scene.sh
+bashes/scannet_benchmark/1b_extract_2d_segmentation_detect.sh
+bashes/scannet_benchmark/2b_build_3d_object_map_detect.sh
+bashes/scannet_benchmark/4b_extract_object_captions_detect.sh
+bashes/scannet_benchmark/5b_refine_with_affordance.sh
+bashes/scannet_benchmark/6b_build_visibility_index.sh
+bashes/scannet_benchmark/run_full_detect_pipeline_to_6b.sh
+```
+
+### 11.5 ScanNet scene 包装策略
+
+为了与当前 `query_scene` / `KeyframeSelector` 的 Replica 约定兼容，ScanNet 不直接裸用 `color/*.jpg`，而是包装成同时包含两套入口：
+
+```text
+scene_id/
+├── color/frame*.jpg
+├── depth/depth*.png
+├── pose/frame*.txt
+├── intrinsic/*.txt
+├── results/frame*.jpg
+├── results/depth*.png
+└── traj.txt
+```
+
+另在 scene root 的上一级放：
+
+```text
+<scene_id>_mesh.ply
+```
+
+以便复用现有 BEV / offscreen 预览查找逻辑。
+
+### 11.6 当前 blocker
+
+raw ScanNet 下载入口已补成仓库内置兼容脚本：
+
+- `tools/scannet/download-scannet.py`
+- `bashes/scannet_benchmark/0_download_scannet_val_minimal.sh`
+
+它保持 `download-scannet.py -o ... --id ... --type ...` 接口，并直接命中公开的 `kaldir` URL：
+
+- `.sens` 优先走 `v1/scans/...`
+- mesh 等公开文件优先走 `v2/scans/...`
+- 若 scene 只存在于 test release，会自动回退到 `scans_test`
+
+因此后续 agent 不再需要先额外寻找官方邮件版脚本；可直接下载 `scanrefer_val` 的最小 raw 子集（`.sens + _vh_clean_2.ply`），再继续执行 ScanNet `1b -> 2b -> 6b`。

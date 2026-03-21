@@ -23,3 +23,141 @@
 - `bashes/7b_query_scene.sh`: 文本查询驱动关键帧选择主入口，底层调用 `conceptgraph.query_scene.examples.query_keyframes`。当前脚本默认 `REPLICA_ROOT=$HOME/Datasets/Replica/Replica`，与 `6b`/`run_full_detect_pipeline_to_6b.sh` 不一致，且不 source `env_vars.bash`。
 - `bashes/run_e2e_query_test.sh`: query scene 端到端测试并输出日志到 `docs/e2e_query_test_run.log`。当前脚本直接 `conda activate conceptgraph`，再以文件路径运行 `conceptgraph/query_scene/examples/e2e_query_test.py`。
 - `bashes/run_full_detect_pipeline_to_6b.sh`: 针对单个 scene 的 detect 全链路总控（清理旧产物，保留 `results/result + traj.txt`，串行执行 `1b→2b→4b→5b+→6b` 并做产物校验）。
+
+## Multi-Benchmark / ScanNet（2026-03-20）
+- `bashes/benchmark_data/1_download_public_assets.sh`
+  - clone `ScanRefer` / `SQA3D` / `open-eqa`
+  - 下载公开的 `ScanRefer_filtered_test.json` 与 `SQA3D sqa_task.zip`
+  - 生成 `data/benchmark/manifests/scannet_scene_manifest.json`
+  - 生成 `data/benchmark/manifests/scannet_union_val_test.txt`
+  - 生成 scene coverage 图 `data/benchmark/manifests/benchmark_scene_coverage.png`
+- `bashes/scannet_benchmark/0_download_scannet_raw_subset.sh`
+  - 读取 manifest 中指定 scene set（默认 `union_val_test`）
+  - 默认使用仓库内置兼容脚本 `tools/scannet/download-scannet.py`
+  - 默认逐 scene 下载 `.sens,_vh_clean_2.ply`
+  - 当前默认目标 scene 数：409（`ScanRefer val=312`, `ScanRefer test=97`，且 `SQA3D/OpenEQA ScanNet` 都是其子集）
+- `bashes/scannet_benchmark/0_download_scannet_val_minimal.sh`
+  - `val` 最小子集下载入口
+  - 默认调用 manifest 中的 `scanrefer_val`
+  - 当前目标 scene 数：312
+- `bashes/scannet_benchmark/1_prepare_replica_like_scene.sh`
+  - 调 `conceptgraph.scripts.prepare_scannet_replica_scene`
+  - 默认 `SCANNET_FRAME_SKIP=5`，即每 5 个 raw ScanNet 帧抽 1 帧
+  - 将原始 ScanNet scene 包装成同时兼容 `ScannetDataset` 与当前 Stage 1 的 Replica-like 结构：
+    - `color/frame*.jpg`
+    - `depth/depth*.png`
+    - `pose/frame*.txt`
+    - `intrinsic/*.txt`
+    - `results/frame*.jpg`
+    - `results/depth*.png`
+    - `traj.txt`
+    - `<scene_id>_mesh.ply`
+  - 生成 `checks/00_scene_wrapper_preview.jpg`
+- `bashes/scannet_benchmark/1b_extract_2d_segmentation_detect.sh`
+  - ScanNet 标注版 2D 检测
+  - 使用 `SCANNET_SCENE_ROOT + SCANNET_CONFIG_PATH`
+  - 默认 `SCANNET_PROCESS_STRIDE=1`，因为 wrapper 已先做了 5 帧采样
+  - 生成 `checks/01_detection_preview.jpg`
+- `bashes/scannet_benchmark/2b_build_3d_object_map_detect.sh`
+  - ScanNet 标注版 3D 对象建图
+  - 复用 `cfslam_pipeline_batch.py`
+  - 默认 `SCANNET_PROCESS_STRIDE=1`
+  - 生成 offscreen 预览 `checks/02_object_map_preview/images/scene_graph_view_00.png`
+- `bashes/scannet_benchmark/4b_extract_object_captions_detect.sh`
+  - wrapper：通过覆盖 `REPLICA_ROOT=${SCANNET_SCENE_ROOT}` 复用现有 4B
+- `bashes/scannet_benchmark/5b_refine_with_affordance.sh`
+  - wrapper：通过覆盖 `REPLICA_ROOT=${SCANNET_SCENE_ROOT}` 复用现有 5B+
+- `bashes/scannet_benchmark/6b_build_visibility_index.sh`
+  - ScanNet wrapper scene 的 visibility index 预计算
+  - 默认 `SCANNET_PROCESS_STRIDE=1`
+- `bashes/scannet_benchmark/6c_prune_detection_cache.sh`
+  - 在 `2b/6b` 结束后精简 `gsa_detections_ram_withbg_allclasses/*.pkl.gz`
+  - 默认仅保留 `xyxy/confidence/class_id/classes/frame_clip_feat/tagging_caption/tagging_text_prompt`
+  - 主要目的是释放 `mask/image_crops/image_feats/text_feats` 占用的磁盘空间
+- `bashes/scannet_benchmark/run_full_detect_pipeline_to_6b.sh`
+  - 串行执行 `1_prepare -> 1b -> 2b -> (optional 4b/5b) -> 6b`
+  - 默认 `SCANNET_PRUNE_DETECTIONS=1`，完成 `6b` 后自动执行 `6c`
+  - `RUN_CAPTIONS=1` 时附加 caption / affordance
+- `bashes/scannet_benchmark/run_batch_detect_pipeline_to_6c.sh`
+  - 按 manifest scene set 批量执行 ScanNet `prepare -> 1b -> 2b -> 6b -> 6c`
+  - 默认 `scanrefer_val`
+  - 支持断点续跑：已存在 post-processed `pcd_saves` + `indices/visibility_index.pkl` 的 scene 会自动跳过
+  - 支持 `SCENE_LIMIT` / `SCENE_START_AFTER` / `STOP_ON_ERROR` / `MIN_FREE_GB` / `CUDA_DEVICE`
+  - 支持两种调度模式：
+    - `WORKER_MODE=static`：沿用 `WORKER_INDEX` / `WORKER_COUNT` 做静态分片
+    - `WORKER_MODE=queue`：多个 worker 通过共享 `QUEUE_DIR` 抢占下一 scene；适合中途继续加卡
+  - `FREE_MEM_MIN_MIB` + `GPU_WAIT_SECS` 会让 worker 在本卡空闲显存不足时等待，不会直接硬撞 OOM
+  - 日志默认按 `RUN_STAMP + WORKER_TAG` 拆分，避免多 worker 写进同一个 log
+- `bashes/scannet_benchmark/launch_multi_gpu_batch_to_6c.sh`
+  - 按 GPU 列表或显存阈值为每张卡启动一个 batch worker
+  - 默认 `WORKER_MODE=queue`，并为整批 worker 创建共享 `QUEUE_DIR`
+  - 默认用 `FREE_MEM_MIN_MIB=15000`，worker 会在本卡显存不足时等待而不是立刻启动 scene
+  - 显式传 `GPU_LIST=0,1,2,3,4,5,6,7` 时，可把 8 张卡都挂成 waitable worker；空出来的卡会自动接活
+- `bashes/scannet_benchmark/run_after_1b_to_6b.sh`
+  - 适合把 `1b` 放到独立 tmux / GPU 上常驻运行后继续接力
+  - 轮询 `gsa_detections_ram_withbg_allclasses/*.pkl.gz` 直到达到预期 wrapper 帧采样数
+  - 然后自动执行 `2b -> 6b -> 6c`
+
+## OpenEQA ScanNet（2026-03-22）
+- 输出布局：
+  - `OpenEQA/scannet/<clip_id>/conceptgraph/`
+  - `conceptgraph/` 内包含软链接输入：
+    - `*-rgb.png`
+    - `*-depth.png`
+    - `[0-9]*.txt`
+    - `intrinsic_*.txt`
+    - `extrinsic_*.txt`
+    - `mesh.ply`（可选，仅在底层 ScanNet mesh 可用时附带）
+    - `traj.txt`
+  - 同目录下写入 `gsa_detections/`, `gsa_vis/`, `pcd_saves/`, `indices/`, `checks/`
+- `bashes/openeqa-scannet/0_download_missing_scannet_raw.sh`
+  - 从 `OPENEQA_SCANNET_FRAMES_ROOT` 的 clip 列表反推底层 ScanNet `scene_id`
+  - 当前只补下载缺失的 `_vh_clean_2.ply`
+  - 该下载仅用于增强离线 3D 预览；OpenEQA ScanNet clip 建图本身直接使用 frames 目录里的 `rgb/depth/pose/intrinsic`，不依赖 `.sens` 或 mesh
+- `bashes/openeqa-scannet/1_prepare_clip_scene.sh`
+  - 调 `conceptgraph.scripts.prepare_openeqa_scannet_scene`
+  - 在 `OpenEQA/scannet/<clip_id>/conceptgraph/` 内用软链接组织输入
+  - 生成 `checks/00_clip_wrapper_preview.jpg`
+  - 生成 `traj.txt`
+  - 若底层 mesh 缺失，wrapper 仍可成功，后续建图不会因此阻塞
+- `bashes/openeqa-scannet/1b_extract_2d_segmentation_detect.sh`
+  - 用新的 `scannet-openeqa` dataset config 直接在 clip 上跑 `RAM + GroundingDINO + SAM`
+  - `scene_id` 采用 `<clip_id>/conceptgraph`
+  - 当前默认 `OPENEQA_PROCESS_STRIDE=2`
+  - 生成 `gsa_detections_ram_withbg_allclasses/*.pkl.gz`
+  - 生成 `gsa_vis_ram_withbg_allclasses/*.png`
+  - 2026-03-22 修正：预览图查找从 `find | sort | head -n 1` 改成 `sed -n '1p'`，避免 `pipefail + SIGPIPE` 导致 1B 后总控脚本误判失败
+- `bashes/openeqa-scannet/2b_build_3d_object_map_detect.sh`
+  - 在 clip 的 `conceptgraph/` 子目录上跑 `cfslam_pipeline_batch.py`
+  - 若 `conceptgraph/mesh.ply` 存在，则在 `visualize_cfslam_results_offscreen.py` 中作为原始场景 overlay；缺失时仍会生成 object map 和预览
+  - 当前默认 `OPENEQA_PROCESS_STRIDE=2`
+  - 生成 `checks/02_object_map_preview/images/scene_graph_view_00.png`
+- `bashes/openeqa-scannet/6b_build_visibility_index.sh`
+  - 用 `traj.txt + pcd_saves/*_post.pkl.gz` 生成 `indices/visibility_index.pkl`
+  - 当前默认 `OPENEQA_PROCESS_STRIDE=2`
+- `bashes/openeqa-scannet/6c_prune_detection_cache.sh`
+  - 精简 `gsa_detections_ram_withbg_allclasses/*.pkl.gz`
+- `bashes/openeqa-scannet/7_validate_scene_graph.sh`
+  - 运行 `conceptgraph.scripts.validate_scene_graph`
+  - 导出 `indices/object_frame_map.json`
+  - 生成彩色 3D 点云预览 `checks/03_scene_graph_validation/pointcloud/scene_objects_colored_preview.png`
+  - 生成 `view -> objects` 可视化 `checks/03_scene_graph_validation/view_to_objects/*.png`
+  - 生成 `object -> views` 可视化 `checks/03_scene_graph_validation/object_to_views/*.png`
+- `bashes/openeqa-scannet/run_full_detect_pipeline_to_6c.sh`
+  - 串行执行 `1_prepare -> 1b -> 2b -> 6b -> 6c`
+  - 成功结束后会写 `indices/build_info.json`，记录 `process_stride`
+- `bashes/openeqa-scannet/run_batch_detect_pipeline_to_6c.sh`
+  - 批量执行 OpenEQA ScanNet clip pipeline
+  - 直接枚举 `OPENEQA_SCANNET_FRAMES_ROOT` 下所有 clip 目录，不依赖 manifest
+  - 当前默认 `OPENEQA_PROCESS_STRIDE=2`
+  - 支持 `CLIP_LIMIT` / `CLIP_START_AFTER` / `STOP_ON_ERROR` / `MIN_FREE_GB`
+  - 支持 `WORKER_MODE=static|queue`
+  - `clip_done` 判定为 `pcd_saves/*_post.pkl.gz + indices/visibility_index.pkl + indices/build_info.json`
+  - 若 `build_info.json` 里的 `process_stride` 与当前运行配置不一致，batch 会自动重跑该 clip
+- `bashes/openeqa-scannet/launch_multi_gpu_batch_to_6c.sh`
+  - 默认把 `GPU_LIST` 中的每张卡都挂成一个 queue worker
+  - 若不显式传 `GPU_LIST`，默认枚举全部 GPU index
+  - `FREE_MEM_MIN_MIB` 控制 worker 何时真正起 clip；显存不足的卡会等待
+- `bashes/openeqa-scannet/launch_first10_after_raw_sync.sh`
+  - 轮询 clip 对应的底层 ScanNet mesh 是否全部补齐
+  - 仅在你想等 mesh overlay 全齐后再统一开跑时使用；当前主 pipeline 不依赖它

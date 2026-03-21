@@ -9,6 +9,7 @@ manipulation/contact_graspnet/test_data
 manipulation/contact_graspnet/checkpoints
 manipulation/dataset
 env_vars.bash
+bashes/logs/
 
 .idea
 
