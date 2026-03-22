@@ -1,24 +1,21 @@
 #!/bin/bash
-# auto-claude.sh - Autonomous Research Loop with Worker + Reviewer Pattern
+# auto-claude.sh - 3DVLMReasoning Migration Automation
 #
-# Architecture:
-#   1. Task Selector: Picks next pending task from TASKS.md
-#   2. Worker Agent: Implements the task (code/research)
-#   3. Reviewer Agent: Reviews changes, provides critique
-#   4. Research Explorer: Periodically searches for new academic insights
-#   5. Task Updater: Marks tasks complete, logs progress
+# Executes migration tasks from concept-graphs to 3DVLMReasoning repository.
+# Tasks are defined in TASKS.md with 6 phases.
 #
 # Usage:
 #   chmod +x auto-claude.sh
-#   ./auto-claude.sh              # Interactive mode
-#   ./auto-claude.sh --daemon     # Background daemon mode
+#   ./auto-claude.sh              # Show status
+#   ./auto-claude.sh --status     # Show phase progress
+#   ./auto-claude.sh --execute    # Execute next pending task
+#   ./auto-claude.sh --execute-all # Execute all pending tasks
+#   ./auto-claude.sh --phase N    # Execute tasks in phase N only
 #   ./auto-claude.sh --dry-run    # Show what would happen
 #
-# Configuration via environment:
-#   MAX_ITERATIONS=50              # Maximum iterations (default: 50)
-#   RESEARCH_INTERVAL=5            # Run research explorer every N iterations
-#   REVIEW_THRESHOLD=medium        # When to trigger review: always/medium/major
-#   MODEL=claude-opus-4-5          # Model to use
+# Configuration:
+#   TARGET_ROOT - Target repository (default: ../3DVLMReasoning)
+#   MODEL       - Claude model to use (default: claude-sonnet-4-5)
 
 set -euo pipefail
 
@@ -26,24 +23,48 @@ set -euo pipefail
 # CONFIGURATION
 # ════════════════════════════════════════════════════════════════════════════════
 
-MAX_ITERATIONS="${MAX_ITERATIONS:-80}"
-RESEARCH_INTERVAL="${RESEARCH_INTERVAL:-5}"
-REVIEW_THRESHOLD="${REVIEW_THRESHOLD:-medium}"
-MODEL="${MODEL:-claude-opus-4-5}"
-SLEEP_BETWEEN=3
-DRY_RUN=false
-DAEMON_MODE=false
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_ROOT="$SCRIPT_DIR"
+TARGET_ROOT="${TARGET_ROOT:-/Users/bytedance/project/3DVLMReasoning}"
+MODEL="${MODEL:-claude-sonnet-4-5}"
 
-# File paths
-TASKS_FILE="TASKS.md"
-TODO_FILE="TODO.md"
-LOG_DIR="results/auto-claude"
+DRY_RUN=false
+EXECUTE_MODE=false
+EXECUTE_ALL=false
+SHOW_STATUS=false
+TARGET_PHASE=""
+
+# Files
+TASKS_FILE="$SCRIPT_DIR/TASKS.md"
+MIGRATION_PLAN="$SCRIPT_DIR/MIGRATION_PLAN.md"
+LOG_DIR="$SCRIPT_DIR/migration_logs"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-SESSION_LOG="$LOG_DIR/session_$TIMESTAMP.log"
-WORKER_LOG="$LOG_DIR/worker_$TIMESTAMP.log"
-REVIEWER_LOG="$LOG_DIR/reviewer_$TIMESTAMP.log"
-RESEARCH_LOG="$LOG_DIR/research_$TIMESTAMP.log"
-STATE_FILE="$LOG_DIR/.state.json"
+SESSION_LOG="$LOG_DIR/migration_$TIMESTAMP.log"
+
+# Phase ranges (bash 3.2 compatible - using functions instead of arrays)
+get_phase_range() {
+    case $1 in
+        1) echo "100:102" ;;   # Phase 1: Cleanup
+        2) echo "110:131" ;;   # Phase 2: Migration
+        3) echo "200:222" ;;   # Phase 3: Architecture
+        4) echo "300:302" ;;   # Phase 4: Multi-dataset
+        5) echo "400:420" ;;   # Phase 5: Testing
+        6) echo "500:502" ;;   # Phase 6: Validation
+        *) echo "" ;;
+    esac
+}
+
+get_phase_name() {
+    case $1 in
+        1) echo "Cleanup Unused Code" ;;
+        2) echo "Migrate Missing Modules" ;;
+        3) echo "Architectural Rewrite" ;;
+        4) echo "Multi-Dataset Support" ;;
+        5) echo "Equivalence Testing" ;;
+        6) echo "Integration Validation" ;;
+        *) echo "Unknown Phase" ;;
+    esac
+}
 
 # Colors
 RED='\033[0;31m'
@@ -60,24 +81,63 @@ NC='\033[0m'
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --daemon)
-            DAEMON_MODE=true
+        --execute)
+            EXECUTE_MODE=true
             shift
+            ;;
+        --execute-all)
+            EXECUTE_MODE=true
+            EXECUTE_ALL=true
+            shift
+            ;;
+        --status)
+            SHOW_STATUS=true
+            shift
+            ;;
+        --phase)
+            TARGET_PHASE="$2"
+            shift 2
             ;;
         --dry-run)
             DRY_RUN=true
             shift
             ;;
-        --max-iterations)
-            MAX_ITERATIONS="$2"
+        --target)
+            TARGET_ROOT="$2"
             shift 2
             ;;
-        --help)
-            echo "Usage: $0 [--daemon] [--dry-run] [--max-iterations N]"
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "3DVLMReasoning Migration Automation"
+            echo ""
+            echo "Options:"
+            echo "  --status           Show migration progress by phase"
+            echo "  --execute          Execute next pending task"
+            echo "  --execute-all      Execute all pending tasks"
+            echo "  --phase N          Only execute tasks in phase N (1-6)"
+            echo "  --dry-run          Show what would happen"
+            echo "  --target PATH      Override target repository path"
+            echo "  --help, -h         Show this help"
+            echo ""
+            echo "Phases:"
+            echo "  1: Cleanup Unused Code (TASK-100 to TASK-102)"
+            echo "  2: Migrate Missing Modules (TASK-110 to TASK-131)"
+            echo "  3: Architectural Rewrite (TASK-200 to TASK-222)"
+            echo "  4: Multi-Dataset Support (TASK-300 to TASK-302)"
+            echo "  5: Equivalence Testing (TASK-400 to TASK-420)"
+            echo "  6: Integration Validation (TASK-500 to TASK-502)"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --status                # Show progress"
+            echo "  $0 --execute               # Run next task"
+            echo "  $0 --execute --phase 1     # Run next Phase 1 task"
+            echo "  $0 --execute-all           # Run all tasks"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
+            echo "Use --help for usage"
             exit 1
             ;;
     esac
@@ -98,37 +158,145 @@ log() {
         WARN)  color="$YELLOW" ;;
         ERROR) color="$RED" ;;
         OK)    color="$GREEN" ;;
-        WORK)  color="$CYAN" ;;
-        REV)   color="$MAGENTA" ;;
+        TASK)  color="$CYAN" ;;
+        PHASE) color="$MAGENTA" ;;
     esac
-    echo -e "${color}[$level]${NC} $(date '+%H:%M:%S') $msg" | tee -a "$SESSION_LOG"
+    echo -e "${color}[$level]${NC} $(date '+%H:%M:%S') $msg"
+    if [ -n "${SESSION_LOG:-}" ] && [ -d "$(dirname "$SESSION_LOG")" ]; then
+        echo "[$level] $(date '+%H:%M:%S') $msg" >> "$SESSION_LOG" 2>/dev/null || true
+    fi
 }
 
 check_prerequisites() {
     if [ ! -f "$TASKS_FILE" ]; then
-        log ERROR "TASKS.md not found. Please create it first."
+        log ERROR "TASKS.md not found at $TASKS_FILE"
+        exit 1
+    fi
+    if [ ! -d "$TARGET_ROOT" ]; then
+        log ERROR "Target repository not found: $TARGET_ROOT"
+        log INFO "Please ensure 3DVLMReasoning repository exists"
         exit 1
     fi
     if ! command -v ttadk &> /dev/null; then
-        log ERROR "ttadk command not found. Please install it."
-        exit 1
+        log WARN "ttadk not found, will use 'claude' command instead"
     fi
+}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TASK COUNTING
+# ════════════════════════════════════════════════════════════════════════════════
+
+count_phase_tasks() {
+    local phase="$1"
+    local range=$(get_phase_range "$phase")
+    local start="${range%%:*}"
+    local end="${range##*:}"
+
+    local total=0
+    local completed=0
+
+    # Count tasks by reading lines and checking numeric range
+    while IFS= read -r line; do
+        # Extract task number
+        local num=$(echo "$line" | sed -n 's/.*TASK-\([0-9]\{3\}\).*/\1/p')
+        if [ -n "$num" ]; then
+            # Remove leading zeros for comparison
+            num=$((10#$num))
+            if [ "$num" -ge "$start" ] && [ "$num" -le "$end" ]; then
+                total=$((total + 1))
+                if echo "$line" | grep -q '^\- \[x\]'; then
+                    completed=$((completed + 1))
+                fi
+            fi
+        fi
+    done < <(grep -E '^\- \[.\] TASK-[0-9]+' "$TASKS_FILE")
+
+    echo "$completed/$total"
+}
+
+show_status() {
+    echo ""
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo "  3DVLMReasoning Migration Status"
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "Source: $SOURCE_ROOT"
+    echo "Target: $TARGET_ROOT"
+    echo ""
+
+    printf "%-40s %10s\n" "Phase" "Progress"
+    echo "──────────────────────────────────────────────────────"
+
+    local total_completed=0
+    local total_tasks=0
+
+    for phase in 1 2 3 4 5 6; do
+        local name=$(get_phase_name "$phase")
+        local progress=$(count_phase_tasks "$phase")
+        local comp="${progress%%/*}"
+        local tot="${progress##*/}"
+
+        total_completed=$((total_completed + comp))
+        total_tasks=$((total_tasks + tot))
+
+        # Color based on progress
+        if [ "$comp" -eq "$tot" ] && [ "$tot" -gt 0 ]; then
+            printf "${GREEN}%-40s %10s${NC}\n" "Phase $phase: $name" "$progress"
+        elif [ "$comp" -gt 0 ]; then
+            printf "${YELLOW}%-40s %10s${NC}\n" "Phase $phase: $name" "$progress"
+        else
+            printf "%-40s %10s\n" "Phase $phase: $name" "$progress"
+        fi
+    done
+
+    echo "──────────────────────────────────────────────────────"
+    printf "%-40s %10s\n" "Total" "$total_completed/$total_tasks"
+    echo ""
+
+    # Show next pending task
+    local next_task=$(get_next_task)
+    if [ -n "$next_task" ]; then
+        log INFO "Next pending task: $next_task"
+        echo ""
+        echo "Run: $0 --execute"
+    else
+        log OK "All tasks completed!"
+    fi
+    echo ""
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
 # TASK MANAGEMENT
 # ════════════════════════════════════════════════════════════════════════════════
 
-# Get next pending task (returns TASK-XXX or empty)
+# Get next pending task ID
 get_next_task() {
-    # Find first "- [ ] TASK-" line and extract task ID
-    grep -m1 '^\- \[ \] TASK-[0-9]\+' "$TASKS_FILE" | sed -E 's/.*TASK-([0-9]+).*/TASK-\1/' || echo ""
+    if [ -n "$TARGET_PHASE" ]; then
+        local range=$(get_phase_range "$TARGET_PHASE")
+        local start="${range%%:*}"
+        local end="${range##*:}"
+
+        # Find first pending task in phase range
+        while IFS= read -r line; do
+            local num=$(echo "$line" | sed -n 's/.*TASK-\([0-9]\{3\}\).*/\1/p')
+            if [ -n "$num" ]; then
+                num=$((10#$num))
+                if [ "$num" -ge "$start" ] && [ "$num" -le "$end" ]; then
+                    echo "TASK-$num"
+                    return
+                fi
+            fi
+        done < <(grep -E '^\- \[ \] TASK-[0-9]+' "$TASKS_FILE")
+    else
+        # Find first pending task overall
+        grep -m1 -E '^\- \[ \] TASK-[0-9]+' "$TASKS_FILE" | \
+            sed -E 's/.*TASK-([0-9]+).*/TASK-\1/' || echo ""
+    fi
 }
 
 # Get task details
 get_task_details() {
     local task_id="$1"
-    # Extract task block: from task line until next task, section header, or separator
     awk "
         /$task_id/ { found=1 }
         found && /^- \[/ && !/$task_id/ { exit }
@@ -138,556 +306,218 @@ get_task_details() {
     " "$TASKS_FILE"
 }
 
-# Check if task has unmet dependencies
-check_dependencies() {
+# Mark task status
+mark_task_status() {
     local task_id="$1"
-    # Extract only the task block (from task line to next task/section), then find Depends
-    local task_block=$(awk "
-        /^- \[.\] $task_id:/ { found=1; print; next }
-        found && /^- \[/ { exit }
-        found && /^##/ { exit }
-        found && /^---/ { exit }
-        found { print }
-    " "$TASKS_FILE")
+    local status="$2"  # [ ] = pending, [~] = in_progress, [x] = done, [!] = blocked
 
-    local deps=$(echo "$task_block" | grep -m1 'Depends:' | sed 's/.*Depends: *//')
-
-    if [ -z "$deps" ] || [ "$deps" = "None" ] || [[ "$deps" =~ ^[[:space:]]*$ ]]; then
-        return 0  # No dependencies
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i '' "s/^\- \[.\] $task_id/- [$status] $task_id/" "$TASKS_FILE"
+    else
+        sed -i "s/^\- \[.\] $task_id/- [$status] $task_id/" "$TASKS_FILE"
     fi
+}
 
-    # Check each dependency
-    for dep in $(echo "$deps" | tr ',' ' '); do
-        dep=$(echo "$dep" | xargs)  # Trim whitespace
-        # Skip empty deps or self-reference
-        [ -z "$dep" ] && continue
-        [ "$dep" = "$task_id" ] && continue
+# Get phase number for a task
+get_task_phase() {
+    local task_id="$1"
+    local num="${task_id#TASK-}"
+    num=$((10#$num))
 
-        # Check if dependency is incomplete (marked with [ ])
-        if grep -q "^- \[ \] $dep" "$TASKS_FILE"; then
-            log WARN "Task $task_id blocked by incomplete dependency: $dep"
-            return 1
+    for phase in 1 2 3 4 5 6; do
+        local range=$(get_phase_range "$phase")
+        local start="${range%%:*}"
+        local end="${range##*:}"
+        if [ "$num" -ge "$start" ] && [ "$num" -le "$end" ]; then
+            echo "$phase"
+            return
         fi
     done
-    return 0
-}
-
-# Mark task as in progress
-mark_in_progress() {
-    local task_id="$1"
-    sed -i '' "s/^\- \[ \] $task_id/- [~] $task_id/" "$TASKS_FILE"
-}
-
-# Mark task as complete
-mark_complete() {
-    local task_id="$1"
-    sed -i '' "s/^\- \[.\] $task_id/- [x] $task_id/" "$TASKS_FILE"
-}
-
-# Mark task as needs review
-mark_needs_review() {
-    local task_id="$1"
-    sed -i '' "s/^\- \[.\] $task_id/- [?] $task_id/" "$TASKS_FILE"
+    echo "0"
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-# CLAUDE EXECUTION
+# TASK EXECUTION
 # ════════════════════════════════════════════════════════════════════════════════
 
-run_claude() {
-    local prompt="$1"
-    local log_file="$2"
-    local max_time="${3:-1800}"  # 10 minute default
-
-    if [ "$DRY_RUN" = true ]; then
-        log INFO "[DRY-RUN] Would execute Claude with prompt (${#prompt} chars)"
-        echo "$prompt" | head -c 500
-        echo "..."
-        return 0
-    fi
-
-    # macOS doesn't have timeout, use gtimeout if available, otherwise run without timeout
-    local timeout_cmd=""
-    if command -v gtimeout &> /dev/null; then
-        timeout_cmd="gtimeout $max_time"
-    elif command -v timeout &> /dev/null; then
-        timeout_cmd="timeout $max_time"
-    fi
-
-    # Execute Claude
-    if [ -n "$timeout_cmd" ]; then
-        echo "$prompt" | $timeout_cmd ttadk code --model "$MODEL" \
-            -a "--dangerously-skip-permissions --print --output-format stream-json" \
-            2>&1 | tee -a "$log_file"
-    else
-        echo "$prompt" | ttadk code --model "$MODEL" \
-            -a "--dangerously-skip-permissions --print --output-format stream-json" \
-            2>&1 | tee -a "$log_file"
-    fi
-
-    return ${PIPESTATUS[1]}
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-# WORKER AGENT
-# ════════════════════════════════════════════════════════════════════════════════
-
-run_worker() {
+build_task_prompt() {
     local task_id="$1"
     local task_details="$2"
 
-    log WORK "Worker starting task: $task_id"
+    cat << EOF
+# Migration Task: $task_id
 
-    local prompt=$(cat << WORKER_PROMPT
-# 🔧 Worker Agent: Execute Research Task
+You are executing a migration task from concept-graphs to 3DVLMReasoning.
 
-You are the **Worker Agent** in an autonomous research loop for the **Two-Stage 3D Scene Understanding** project.
+## Context
 
-## Your Current Task
-\`\`\`
+- **Source Repository**: $SOURCE_ROOT (conceptgraph/)
+- **Target Repository**: $TARGET_ROOT (src/)
+- **Current Task**: $task_id
+
+## Task Details
+
 $task_details
-\`\`\`
 
-## Project Context
+## Migration Plan Reference
 
-This project implements a two-stage framework:
-- **Stage 1**: Task-conditioned keyframe retrieval from 3D scene graphs
-- **Stage 2**: VLM agentic reasoning over retrieved visual evidence
+See MIGRATION_PLAN.md for:
+- DatasetAdapter ABC design (Phase 3)
+- File mappings and import transforms
+- Success criteria
 
-### Academic Innovation Points (CRITICAL - Keep These in Mind)
+## Instructions
 
-1. **Adaptive Evidence Acquisition**: VLM agent dynamically decides when to request more visual evidence, not one-shot inference
-2. **Symbolic-to-Visual Repair**: Stage 2 validates and corrects Stage 1 scene graph hypotheses using raw pixels
-3. **Evidence-Grounded Uncertainty**: Explicit uncertainty output when evidence is insufficient (reduce hallucination)
-4. **Unified Multi-Task Policy**: Single agent architecture handles QA, grounding, navigation, manipulation
+1. Read relevant source files from concept-graphs
+2. Apply required transformations:
+   - Import paths: conceptgraph.X → relative imports
+   - File locations: conceptgraph/X → src/X
+3. Write/modify files in 3DVLMReasoning
+4. Verify changes work (run tests if applicable)
+5. Mark acceptance criteria as complete
 
-### Core Research Claim
-> "Evidence-seeking VLM agents that iteratively acquire visual context outperform one-shot baselines, especially when scene graphs have detection failures."
+## Important
 
-## 🧠 Multi-Step Reasoning Protocol (MANDATORY)
+- DO NOT reference conceptgraph in final code
+- Follow 3DVLMReasoning code style (black, type hints, docstrings)
+- Ensure all tests pass after changes
 
-You are NOT a one-shot code generator. You are a **ReAct-style reasoning agent**. For complex tasks:
-
-### Step 1: Understand & Plan
-- Read relevant existing code first (use Read tool)
-- Identify what Stage 1 retrieval provides (keyframes, hypotheses, object metadata)
-- Plan how your implementation supports the academic claims above
-
-### Step 2: Implement Incrementally
-- Make small, testable changes
-- After each significant change, run tests to verify
-- If tests fail, reflect on why and fix before proceeding
-
-### Step 3: Reflect & Validate
-- Does this implementation support "adaptive evidence acquisition"?
-- Does it enable "symbolic-to-visual repair"?
-- Can it produce "evidence-grounded uncertainty"?
-- Is the code reusable across QA/grounding/navigation/manipulation tasks?
-
-### Step 4: Academic Alignment Check
-Before marking complete, ask yourself:
-- [ ] Does this strengthen our claim that iterative evidence-seeking beats one-shot?
-- [ ] Does this help demonstrate Stage 2 can repair Stage 1 failures?
-- [ ] Is this publishable quality (CVPR/NeurIPS/ICLR standard)?
-
-## Execution Guidelines
-
-1. **Read first**: Review relevant existing code before writing
-2. **Small changes**: Make incremental, testable changes
-3. **Test everything**: Run unit tests after each change
-4. **Document**: Add docstrings and type hints
-5. **Format**: Use \`.venv/bin/python -m black <file>\` to format
-
-## Commands Reference
-- Run tests: \`.venv/bin/python -m pytest <test_file> -v\`
-- Format code: \`.venv/bin/python -m black <file>\`
-- Stage 2 agent tests: \`.venv/bin/python -m pytest conceptgraph/agents/tests/test_stage2_deep_agent.py -q\`
-- Benchmark tests: \`.venv/bin/python -m pytest conceptgraph/benchmarks/tests/ -v\`
-
-## Important Files
-- Research direction: \`memory/research_direction.md\`
-- TODO overview: \`TODO.md\`
-- Task tracking: \`TASKS.md\`
-- Stage 2 design: \`docs/stage2_vlm_agent_design.md\`
-- Stage 2 handoff: \`docs/stage2_agent_handoff.md\`
-
-## Output Requirements
-
-When done, output a structured summary:
-\`\`\`
-## Task $task_id Summary
-
-### Status: DONE | PARTIAL | BLOCKED
-
-### Files Changed
-- <file1>: <what changed>
-- <file2>: <what changed>
-
-### Tests
-- Passed: X/Y
-- Command: \`<test command used>\`
-
-### Academic Alignment
-- Evidence acquisition support: ✓/✗
-- Symbolic-visual repair support: ✓/✗
-- Uncertainty output support: ✓/✗
-- Multi-task compatibility: ✓/✗
-
-### Reflection
-<What went well? What was challenging? Any insights for future tasks?>
-
-### Follow-ups (if any)
-- <issue or improvement for future tasks>
-\`\`\`
-
-Now execute task $task_id. Focus on quality and correctness.
-WORKER_PROMPT
-)
-
-    run_claude "$prompt" "$WORKER_LOG" 900
-    return $?
+Execute this task now.
+EOF
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# REVIEWER AGENT
-# ════════════════════════════════════════════════════════════════════════════════
-
-run_reviewer() {
+execute_task() {
     local task_id="$1"
 
-    log REV "Reviewer analyzing changes for: $task_id"
+    log TASK "Executing: $task_id"
 
-    # Get git diff
-    local git_diff=$(git diff --cached --stat 2>/dev/null || git diff --stat 2>/dev/null || echo "No changes detected")
-    local git_diff_full=$(git diff --cached 2>/dev/null || git diff 2>/dev/null | head -500)
+    # Get task details
+    local task_details=$(get_task_details "$task_id")
 
-    local prompt=$(cat << REVIEWER_PROMPT
-# 🔍 Reviewer Agent: Code Review & Academic Alignment
+    if [ -z "$task_details" ]; then
+        log ERROR "Could not find task details for $task_id"
+        return 1
+    fi
 
-You are the **Reviewer Agent** in an autonomous research loop. Your job is to:
-1. Review code changes for quality and correctness
-2. **Critically evaluate alignment with academic innovation goals**
-3. Suggest improvements that strengthen the research contribution
+    # Get phase info
+    local phase=$(get_task_phase "$task_id")
+    log PHASE "Phase $phase: $(get_phase_name "$phase")"
 
-## Core Research Claims (Use These as Review Criteria)
+    # Build prompt
+    local prompt=$(build_task_prompt "$task_id" "$task_details")
 
-Our paper argues:
-> "Evidence-seeking VLM agents that iteratively acquire visual context outperform one-shot baselines, especially when scene graphs have detection failures."
-
-**Four Innovation Pillars:**
-1. **Adaptive Evidence Acquisition** - Agent dynamically requests more keyframes/crops
-2. **Symbolic-to-Visual Repair** - Stage 2 corrects Stage 1 scene graph errors
-3. **Evidence-Grounded Uncertainty** - Explicit "insufficient evidence" output
-4. **Unified Multi-Task Policy** - Same agent handles QA/grounding/nav/manipulation
-
-## Changes to Review (Task: $task_id)
-
-### Git Diff Summary
-\`\`\`
-$git_diff
-\`\`\`
-
-### Detailed Changes (truncated)
-\`\`\`diff
-$git_diff_full
-\`\`\`
-
-## Review Dimensions
-
-### 1. Code Quality (Score 1-10)
-- [ ] Follows Python best practices (PEP8, type hints)
-- [ ] Has comprehensive docstrings
-- [ ] No hardcoded values or magic numbers
-- [ ] Proper error handling
-- [ ] Unit tests with good coverage
-- [ ] Code is modular and reusable
-
-### 2. Research Alignment (Score 1-10)
-- [ ] Supports "iterative evidence acquisition" claim
-- [ ] Enables "symbolic-to-visual repair" workflow
-- [ ] Allows uncertainty/confidence output
-- [ ] Compatible with multi-task evaluation
-- [ ] Follows two-stage paradigm correctly
-
-### 3. Academic Innovation (Score 1-10)
-- [ ] Implementation is novel (not just wrapper code)
-- [ ] Could be cited as a contribution in paper
-- [ ] Demonstrates clear advantage over one-shot baseline
-- [ ] Enables fair ablation studies
-- [ ] Supports reproducibility
-
-### 4. Publishability Check
-- [ ] Would a CVPR/NeurIPS reviewer accept this as rigorous?
-- [ ] Are there any methodological flaws?
-- [ ] Is the evaluation protocol sound?
-
-## Output Format
-
-\`\`\`json
-{
-  "task_id": "$task_id",
-  "scores": {
-    "code_quality": <1-10>,
-    "research_alignment": <1-10>,
-    "academic_innovation": <1-10>,
-    "overall": <1-10>
-  },
-  "verdict": "APPROVE" | "REQUEST_CHANGES" | "NEEDS_DISCUSSION",
-  "strengths": ["strength1", "strength2"],
-  "issues": {
-    "critical": ["must fix before merge"],
-    "major": ["should fix"],
-    "minor": ["nice to have"]
-  },
-  "academic_concerns": ["any concerns about research validity"],
-  "suggestions": ["actionable improvement"],
-  "should_commit": true | false
-}
-\`\`\`
-
-Be rigorous but constructive. Our goal is **publishable research at top venues**.
-  "overall_verdict": "APPROVE" | "REQUEST_CHANGES" | "NEEDS_DISCUSSION",
-  "issues": ["issue1", "issue2"],
-  "suggestions": ["suggestion1", "suggestion2"],
-  "should_commit": true | false
-}
-\`\`\`
-
-Be constructive but rigorous. Our goal is publishable research.
-REVIEWER_PROMPT
-)
-
-    run_claude "$prompt" "$REVIEWER_LOG" 300
-    return $?
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-# RESEARCH EXPLORER AGENT
-# ════════════════════════════════════════════════════════════════════════════════
-
-run_research_explorer() {
-    log INFO "🔬 Research Explorer: Searching for new academic insights..."
-
-    local prompt=$(cat << RESEARCH_PROMPT
-# 🎓 Research Explorer Agent: Academic Insight Discovery
-
-You are the **Research Explorer** in an autonomous research loop. Your mission:
-1. Search for latest papers relevant to our research
-2. Identify potential academic contributions we're missing
-3. Find comparison baselines and benchmarks
-
-## Our Research Direction
-
-**Title**: Two-Stage Framework for 3D Scene Understanding with Evidence-Seeking VLM Agents
-
-**Core Claims**:
-1. VLM agents that dynamically request evidence outperform one-shot baselines
-2. Visual repair can correct scene graph detection failures
-3. Explicit uncertainty reduces hallucination
-4. Unified multi-task policy (QA, grounding, navigation, manipulation)
-
-**Target Venues**: CVPR, ICCV, NeurIPS, ICLR, ECCV 2025-2026
-
-## Search Tasks
-
-Use the Agent tool with subagent_type="Explore" or WebSearch to:
-
-1. **Competitor Analysis**: Search for recent papers on:
-   - "3D scene graph + LLM reasoning 2024 2025"
-   - "VLM agent embodied QA"
-   - "iterative visual reasoning benchmark"
-
-2. **Benchmark Updates**: Check for:
-   - New EQA/VQA benchmarks released in 2025
-   - Updated SOTA results on OpenEQA, SQA3D, ScanRefer
-   - New evaluation metrics being adopted
-
-3. **Method Gaps**: Look for:
-   - What existing methods don't address
-   - Common failure modes in recent papers
-   - Under-explored research directions
-
-## Output Format
-
-\`\`\`markdown
-## Research Insights Report
-
-### New Related Work
-- [Paper Title](url) - Venue 2025
-  - Relevance: <how it relates to us>
-  - Differentiation: <how we differ>
-
-### Updated Benchmarks
-- <benchmark name>: New SOTA is X% by <method>
-
-### Identified Gaps
-- Gap 1: <description> → Opportunity: <what we can do>
-
-### Recommended Actions
-1. <action item for TASKS.md>
-\`\`\`
-
-Search now and report findings.
-RESEARCH_PROMPT
-)
-
-    run_claude "$prompt" "$RESEARCH_LOG" 600
-    return $?
-}
-
-# ════════════════════════════════════════════════════════════════════════════════
-# GIT OPERATIONS
-# ════════════════════════════════════════════════════════════════════════════════
-
-auto_commit() {
-    local task_id="$1"
-    local commit_type="${2:-feat}"
-
-    if [ -z "$(git status --porcelain)" ]; then
-        log INFO "No changes to commit"
+    if [ "$DRY_RUN" = true ]; then
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "DRY RUN: Would execute task $task_id"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Task Details:"
+        echo "$task_details"
+        echo ""
+        echo "Working Directory: $TARGET_ROOT"
+        echo ""
         return 0
     fi
 
-    git add -A
+    # Mark as in progress
+    mark_task_status "$task_id" "~"
 
-    # Generate commit message
-    local files_changed=$(git diff --cached --name-only | wc -l | xargs)
-    local commit_msg="$commit_type(research): $task_id - automated implementation
+    # Execute with Claude (in target directory)
+    log INFO "Running Claude in $TARGET_ROOT..."
 
-Files changed: $files_changed
-Session: $TIMESTAMP
+    local task_log="$LOG_DIR/${task_id}_$TIMESTAMP.log"
 
-Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
-Co-Authored-By: TTADK <ttadk@bytedance.com>"
+    # Execute task
+    cd "$TARGET_ROOT"
 
-    git commit -m "$commit_msg"
-    log OK "Committed changes for $task_id"
+    local task_log="$LOG_DIR/${task_id}_$TIMESTAMP.log"
+
+    # Use ttadk if available, otherwise claude
+    if command -v ttadk &> /dev/null; then
+        # ttadk requires -a to pass args to claude
+        echo "$prompt" | ttadk code -m "$MODEL" -a "--print --dangerously-skip-permissions" 2>&1 | tee "$task_log"
+    else
+        echo "$prompt" | claude code --model "$MODEL" --print --dangerously-skip-permissions 2>&1 | tee "$task_log"
+    fi
+    local exit_code=${PIPESTATUS[1]}
+
+    cd "$SOURCE_ROOT"
+
+    if [ $exit_code -eq 0 ]; then
+        log OK "Task $task_id completed"
+        mark_task_status "$task_id" "x"
+        return 0
+    else
+        log ERROR "Task $task_id failed (exit code: $exit_code)"
+        mark_task_status "$task_id" "!"
+        return 1
+    fi
 }
 
-# ════════════════════════════════════════════════════════════════════════════════
-# MAIN LOOP
-# ════════════════════════════════════════════════════════════════════════════════
-
-main() {
-    log INFO "════════════════════════════════════════════════════════════"
-    log INFO "  Auto-Claude Research Loop Started"
-    log INFO "  Model: $MODEL | Max Iterations: $MAX_ITERATIONS"
-    log INFO "  Session: $TIMESTAMP"
-    log INFO "════════════════════════════════════════════════════════════"
-
+run_execution() {
     check_prerequisites
 
+    echo ""
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo "  3DVLMReasoning Migration Execution"
+    echo "════════════════════════════════════════════════════════════════════════"
+    echo ""
+
+    if [ -n "$TARGET_PHASE" ]; then
+        log INFO "Target phase: $TARGET_PHASE ($(get_phase_name "$TARGET_PHASE"))"
+    fi
+
     local iteration=0
-    local consecutive_failures=0
-    local max_failures=3
+    local max_iterations=100
 
-    while [ $iteration -lt $MAX_ITERATIONS ]; do
-        iteration=$((iteration + 1))
-
-        echo ""
-        log INFO "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        log INFO "  Iteration $iteration / $MAX_ITERATIONS"
-        log INFO "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-        # ─────────────────────────────────────────────────────────────────────
-        # Step 1: Get next task
-        # ─────────────────────────────────────────────────────────────────────
+    while [ $iteration -lt $max_iterations ]; do
         local task_id=$(get_next_task)
 
         if [ -z "$task_id" ]; then
-            log OK "🎉 All tasks completed! Research loop finished."
+            if [ -n "$TARGET_PHASE" ]; then
+                log OK "Phase $TARGET_PHASE complete!"
+            else
+                log OK "All migration tasks complete!"
+            fi
             break
         fi
 
-        # Check dependencies
-        if ! check_dependencies "$task_id"; then
-            log WARN "Skipping $task_id due to unmet dependencies"
-            # Mark as blocked and try next
-            sed -i '' "s/^\- \[ \] $task_id/- [!] $task_id/" "$TASKS_FILE"
-            continue
+        execute_task "$task_id"
+        local result=$?
+
+        if [ $result -ne 0 ]; then
+            log ERROR "Task failed, stopping execution"
+            break
         fi
 
-        local task_details=$(get_task_details "$task_id")
-        log INFO "Selected task: $task_id"
-
-        # ─────────────────────────────────────────────────────────────────────
-        # Step 2: Run Worker Agent
-        # ─────────────────────────────────────────────────────────────────────
-        mark_in_progress "$task_id"
-
-        if ! run_worker "$task_id" "$task_details"; then
-            log ERROR "Worker failed for $task_id"
-            consecutive_failures=$((consecutive_failures + 1))
-
-            if [ $consecutive_failures -ge $max_failures ]; then
-                log ERROR "Too many consecutive failures. Stopping."
-                exit 1
-            fi
-
-            log WARN "Waiting 30s before retry..."
-            sleep 30
-            mark_needs_review "$task_id"
-            continue
+        if [ "$EXECUTE_ALL" = false ]; then
+            break
         fi
 
-        consecutive_failures=0
-
-        # ─────────────────────────────────────────────────────────────────────
-        # Step 3: Run Reviewer Agent (if changes exist)
-        # ─────────────────────────────────────────────────────────────────────
-        if [ -n "$(git status --porcelain)" ]; then
-            if ! run_reviewer "$task_id"; then
-                log WARN "Reviewer had issues, but continuing..."
-            fi
-
-            # Auto-commit (reviewer feedback is informational for now)
-            auto_commit "$task_id" "feat"
-        fi
-
-        # Mark task complete
-        mark_complete "$task_id"
-        log OK "✓ Task $task_id completed"
-
-        # ─────────────────────────────────────────────────────────────────────
-        # Step 4: Periodic Research Explorer
-        # ─────────────────────────────────────────────────────────────────────
-        if [ $((iteration % RESEARCH_INTERVAL)) -eq 0 ]; then
-            run_research_explorer || log WARN "Research explorer failed, continuing..."
-        fi
-
-        # ─────────────────────────────────────────────────────────────────────
-        # Step 5: Brief pause
-        # ─────────────────────────────────────────────────────────────────────
-        log INFO "Sleeping ${SLEEP_BETWEEN}s before next iteration..."
-        sleep $SLEEP_BETWEEN
-
+        iteration=$((iteration + 1))
+        sleep 2
     done
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Final Summary
-    # ─────────────────────────────────────────────────────────────────────────
     echo ""
-    log INFO "════════════════════════════════════════════════════════════"
-    log INFO "  Session Complete"
-    log INFO "  Total iterations: $iteration"
-    log INFO "  Logs: $LOG_DIR/"
-    log INFO "════════════════════════════════════════════════════════════"
-
-    # Show remaining tasks
-    local remaining=$(grep -c '^\- \[ \]' "$TASKS_FILE" 2>/dev/null || echo "0")
-    local completed=$(grep -c '^\- \[x\]' "$TASKS_FILE" 2>/dev/null || echo "0")
-    log INFO "Tasks: $completed completed, $remaining remaining"
+    show_status
 }
 
 # ════════════════════════════════════════════════════════════════════════════════
-# ENTRY POINT
+# MAIN
 # ════════════════════════════════════════════════════════════════════════════════
 
-if [ "$DAEMON_MODE" = true ]; then
-    log INFO "Starting in daemon mode..."
-    nohup "$0" > "$LOG_DIR/daemon.log" 2>&1 &
-    echo "Daemon started with PID $!"
-    exit 0
-fi
+main() {
+    if [ "$EXECUTE_MODE" = true ]; then
+        run_execution
+    elif [ "$SHOW_STATUS" = true ]; then
+        check_prerequisites
+        show_status
+    else
+        # Default: show status
+        check_prerequisites
+        show_status
+    fi
+}
 
-main "$@"
+main

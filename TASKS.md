@@ -1,306 +1,358 @@
-# Research Tasks: Two-Stage 3D Scene Understanding
+# 3DVLMReasoning Migration Tasks
 
-> Auto-generated from TODO.md. Track progress with `[x]` markers.
-> Format: `- [ ] TASK-{ID}: {Title} | Priority: {1-5} | Est: {hours}h`
+> Migration tasks from concept-graphs to 3DVLMReasoning repository.
+> Run via `./auto-claude.sh --execute` for one-click migration.
 
 ## Task Status Legend
 - `[ ]` Pending
 - `[~]` In Progress
 - `[x]` Completed
 - `[!]` Blocked
-- `[?]` Needs Review
 
 ---
 
-## Phase 1: Benchmark Integration (Priority 1)
+## Phase 1: Cleanup Unused Code (Est: 4h)
 
-### Benchmark Loaders
-
-- [x] TASK-001: OpenEQA benchmark loader | Priority: 1 | Est: 2h
-  - File: `conceptgraph/benchmarks/openeqa_loader.py`
-  - Tests: `conceptgraph/benchmarks/tests/test_openeqa.py` (26 tests passing)
-  - Status: Complete with LLM evaluation protocol
-
-- [x] TASK-002: SQA3D benchmark loader | Priority: 1 | Est: 2h
-  - File: `conceptgraph/benchmarks/sqa3d_loader.py`
-  - Tests: `conceptgraph/benchmarks/tests/test_sqa3d.py` (41 tests passing)
-  - Status: Complete with situation context
-
-- [x] TASK-003: ScanRefer benchmark loader | Priority: 1 | Est: 3h
-  - File: `conceptgraph/benchmarks/scanrefer_loader.py`
-  - Tests: `conceptgraph/benchmarks/tests/test_scanrefer.py`
-  - Depends: None
+- [ ] TASK-100: Remove VLMClient from vlm_interface.py | Est: 1h
+  - Target: `3DVLMReasoning/src/query_scene/vlm_interface.py`
+  - Actions:
+    - Delete VLMClient class (lines 430-494 in original)
+    - Remove `requests` import
+    - Keep: VLMInput, STRATEGY_MAP, VLMInputConstructor, VLMOutputParser
+    - Update __init__.py exports
   - Acceptance:
-    - [ ] Load ScanRefer JSON format
-    - [ ] Parse 3D bounding boxes
-    - [ ] Implement IoU-based evaluation (Acc@0.25, Acc@0.5)
-    - [ ] Unit tests with >90% coverage
+    - [ ] No VLMClient class in file
+    - [ ] All tests pass
+    - [ ] No unused imports
 
-- [x] TASK-004: EAI diagnostic benchmark loader | Priority: 2 | Est: 4h
-  - File: `conceptgraph/benchmarks/eai_loader.py`
-  - Tests: `conceptgraph/benchmarks/tests/test_eai.py`
-  - Depends: None
+- [ ] TASK-101: Remove deprecated query strategies | Est: 2h
+  - Target: `3DVLMReasoning/src/query_scene/`
+  - Actions:
+    - Audit query_pipeline.py for deprecated VLM paths
+    - Remove any llm_evaluator_v1.py if exists
+    - Clean up unused strategy code
   - Acceptance:
-    - [ ] Load EAI HuggingFace dataset
-    - [ ] Support subtask evaluation (goal, subgoal, action, transition)
-    - [ ] Unit tests
+    - [ ] No deprecated strategy code
+    - [ ] Pipeline still functional
 
-- [x] TASK-005: Update benchmarks __init__.py exports | Priority: 1 | Est: 0.5h
-  - Depends: TASK-003, TASK-004
+- [ ] TASK-102: Clean up test fixtures | Est: 1h
+  - Target: `3DVLMReasoning/tests/`
+  - Actions:
+    - Remove fixtures referencing VLMClient
+    - Update test imports
+    - Verify test suite passes
   - Acceptance:
-    - [ ] Export all loaders from package
-    - [ ] Add to __all__ list
-
-### Dataset Download
-
-- [x] TASK-006: Download OpenEQA dataset | Priority: 2 | Est: 1h
-  - Command: `download_openeqa("/data/benchmarks", include_frames=True)`
-  - Note: Frames are ~50GB, start with metadata only first
-
-- [x] TASK-007: Download SQA3D dataset | Priority: 2 | Est: 1h
-  - Command: `download_sqa3d("/data/benchmarks")`
-  - Note: Requires ScanNet scenes for full evaluation
-  - Status: Complete - official format with questions + annotations files
-
-- [x] TASK-008: Download ScanRefer dataset | Priority: 2 | Est: 1h
-  - URL: https://github.com/daveredrum/ScanRefer
-  - Note: Shares ScanNet dependency with SQA3D
-  - Status: Complete - test split downloaded
+    - [ ] All tests pass
+    - [ ] No orphaned fixtures
 
 ---
 
-## Phase 2: Stage 2 Agent Enhancement (Priority 1)
+## Phase 2: Migrate Missing Modules (Est: 8h)
 
-### Tool Implementation
+### Evaluation Module
 
-- [x] TASK-010: Implement request_crops tool backend | Priority: 1 | Est: 4h
-  - File: `conceptgraph/agents/tools/request_crops.py`
-  - Tests: `conceptgraph/agents/tools/tests/test_request_crops.py` (32 tests passing)
-  - Depends: Stage 1 object detection output
+- [ ] TASK-110: Migrate evaluation module core | Est: 2h
+  - Source: `conceptgraph/evaluation/*.py` (core files)
+  - Target: `3DVLMReasoning/src/evaluation/`
+  - Files: batch_eval.py, metrics.py, ablation_config.py, trace_integration.py
   - Acceptance:
-    - [x] Crop objects from keyframes using bounding boxes
-    - [x] Support multiple crop requests in single call
-    - [x] Return cropped images with metadata
-    - [x] Unit tests
+    - [ ] All core files migrated
+    - [ ] Import paths updated (conceptgraph → relative)
 
-- [x] TASK-011: Implement switch_or_expand_hypothesis tool | Priority: 1 | Est: 3h
-  - File: `conceptgraph/agents/tools/hypothesis_repair.py`
-  - Tests: `conceptgraph/agents/tools/tests/test_hypothesis_repair.py` (41 tests passing)
-  - Depends: Stage 1 hypothesis output
+- [ ] TASK-111: Migrate evaluation scripts | Est: 2h
+  - Source: `conceptgraph/evaluation/scripts/`
+  - Target: `3DVLMReasoning/src/evaluation/scripts/`
+  - Files: run_openeqa_*.py, run_sqa3d_*.py, run_scanrefer_*.py
   - Acceptance:
-    - [x] Switch between direct/proxy/context hypotheses
-    - [x] Request alternative hypotheses from Stage 1
-    - [x] Track hypothesis history for analysis
+    - [ ] All scripts migrated
+    - [ ] CLI interfaces functional
 
-- [~] TASK-012: Add token budget tracking to agent | Priority: 2 | Est: 2h
-  - File: `conceptgraph/agents/stage2_deep_agent.py`
+- [ ] TASK-112: Migrate evaluation ablations | Est: 1h
+  - Source: `conceptgraph/evaluation/ablations/`
+  - Target: `3DVLMReasoning/src/evaluation/ablations/`
+  - Files: run_*_ablation.py
   - Acceptance:
-    - [ ] Track input/output tokens per turn
-    - [ ] Implement budget-aware stopping
-    - [ ] Log budget usage in trace
+    - [ ] All ablation scripts migrated
 
-- [x] TASK-013: Implement uncertainty-aware stopping | Priority: 2 | Est: 3h
-  - File: `conceptgraph/agents/stage2_deep_agent.py`
+- [ ] TASK-113: Migrate evaluation tests | Est: 1h
+  - Source: `conceptgraph/evaluation/tests/`
+  - Target: `3DVLMReasoning/tests/evaluation/`
   - Acceptance:
-    - [ ] Agent can output "insufficient evidence" with uncertainty
-    - [ ] Confidence threshold configurable
-    - [ ] Unit tests for uncertainty scenarios
+    - [ ] All tests migrated and passing
 
----
-
-## Phase 3: Evaluation Pipeline (Priority 1)
-
-- [x] TASK-020: Build batch evaluation script | Priority: 1 | Est: 4h
-  - File: `conceptgraph/evaluation/batch_eval.py`
-  - Tests: `conceptgraph/evaluation/tests/test_batch_eval.py` (33 tests passing)
-  - Status: Complete with parallel evaluation, checkpointing, and ablation support
+- [ ] TASK-114: Create evaluation __init__.py | Est: 0.5h
+  - Target: `3DVLMReasoning/src/evaluation/__init__.py`
   - Acceptance:
-    - [x] Run Stage 1 + Stage 2 on benchmark samples
-    - [x] Support parallel evaluation
-    - [x] Progress tracking and resumption
-    - [x] Output structured results JSON
+    - [ ] All public APIs exported
 
-- [x] TASK-021: Implement metrics aggregation | Priority: 1 | Est: 2h
-  - File: `conceptgraph/evaluation/metrics.py`
-  - Tests: `conceptgraph/evaluation/tests/test_metrics.py` (56 tests passing)
-  - Status: Complete with BenchmarkMetrics, AblationGroup, aggregate functions, LaTeX export
+### Dataset Module
+
+- [ ] TASK-120: Migrate dataset module | Est: 1h
+  - Source: `conceptgraph/dataset/`
+  - Target: `3DVLMReasoning/src/dataset/`
+  - Files: replica_constants.py, datasets_common.py, preprocess_r3d_file.py, save_record3d.py
   - Acceptance:
-    - [x] Aggregate per-benchmark metrics
-    - [x] Support ablation grouping
-    - [x] Export to LaTeX tables
+    - [ ] All files migrated
+    - [ ] Import paths updated
 
-- [x] TASK-022: Create ablation configuration system | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablation_config.py`
-  - Tests: `conceptgraph/evaluation/tests/test_ablation_config.py` (60 tests passing)
-  - Status: Complete with YAML configs, tool toggles, agent parameters, preset library
+- [ ] TASK-121: Create dataset __init__.py | Est: 0.5h
+  - Target: `3DVLMReasoning/src/dataset/__init__.py`
   - Acceptance:
-    - [x] YAML-based ablation configs
-    - [x] Enable/disable individual tools
-    - [x] Control agent parameters
+    - [ ] Module exports configured
 
-- [x] TASK-023: Integrate with trace server for logging | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/trace_integration.py`
-  - Tests: `conceptgraph/evaluation/tests/test_trace_integration.py` (33 tests passing)
-  - Status: Complete with EvalTraceManager, TracingBatchEvaluatorMixin, CSV/JSON export
-  - Depends: TASK-020
-  - Acceptance:
-    - [x] Auto-save traces during evaluation
-    - [x] Link traces to benchmark samples
-    - [x] Export trace statistics
+### Scripts Module
 
----
-
-## Phase 4: Baseline Experiments (Priority 2)
-
-- [x] TASK-030: Run Stage 1 only baseline on OpenEQA | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/scripts/run_openeqa_stage1_only.py`
-  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_stage1_only.py` (17 tests passing)
-  - Depends: TASK-006, TASK-020
-  - Output: `results/baselines/openeqa_stage1_only.json`
-  - Status: Complete with mock data support and CLI interface
-
-- [x] TASK-031: Run one-shot VLM baseline on OpenEQA | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/scripts/run_openeqa_oneshot.py`
-  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_oneshot.py` (21 tests passing)
-  - Depends: TASK-006, TASK-020
-  - Output: `results/baselines/openeqa_oneshot.json`
-  - Status: Complete with mock data support and CLI interface
-
-- [x] TASK-032: Run full Stage 2 agent on OpenEQA | Priority: 2 | Est: 4h
-  - File: `conceptgraph/evaluation/scripts/run_openeqa_stage2_full.py`
-  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_openeqa_stage2_full.py` (33 tests passing)
-  - Depends: TASK-006, TASK-020, TASK-010, TASK-011
-  - Output: `results/experiments/openeqa_stage2_full.json`
-  - Status: Complete with mock data support, all tools enabled, multi-turn reasoning
-
-- [x] TASK-033: Run SQA3D experiments (all three conditions) | Priority: 2 | Est: 6h
+- [ ] TASK-130: Migrate critical scripts | Est: 1h
+  - Source: `conceptgraph/scripts/`
+  - Target: `3DVLMReasoning/src/scripts/`
   - Files:
-    - `conceptgraph/evaluation/scripts/run_sqa3d_stage1_only.py` (Stage 1 only baseline)
-    - `conceptgraph/evaluation/scripts/run_sqa3d_oneshot.py` (One-shot VLM baseline)
-    - `conceptgraph/evaluation/scripts/run_sqa3d_stage2_full.py` (Full Stage 2 agent)
-  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_sqa3d_*.py` (67 tests passing)
-  - Depends: TASK-007, TASK-020
-  - Output: `results/experiments/sqa3d_*.json`
-  - Status: Complete with mock data support, situation-aware context, all three experimental conditions
+    - build_visibility_index.py
+    - build_open_world_samples.py
+    - build_multibenchmark_scene_manifest.py
+    - prepare_openeqa_scannet_scene.py
+    - validate_scene_graph.py
+  - Acceptance:
+    - [ ] Critical scripts migrated
+    - [ ] CLI functional
 
-- [x] TASK-034: Run ScanRefer experiments | Priority: 2 | Est: 4h
+- [ ] TASK-131: Migrate ScanNet processing scripts | Est: 1h
+  - Source: `conceptgraph/scripts/scannet_process/`
+  - Target: `3DVLMReasoning/src/scripts/scannet_process/`
+  - Acceptance:
+    - [ ] ScanNet processing pipeline available
+
+---
+
+## Phase 3: Architectural Rewrite (Est: 12h)
+
+### Dataset Abstraction
+
+- [ ] TASK-200: Create dataset base abstractions | Est: 2h
+  - Target: `3DVLMReasoning/src/dataset/base.py`
+  - Classes: SceneMetadata, FrameData, DatasetAdapter ABC
+  - Acceptance:
+    - [ ] ABC defines: get_scene_ids, load_scene_metadata, iter_frames, load_frame, get_coordinate_transform
+    - [ ] Type hints complete
+    - [ ] Docstrings complete
+
+- [ ] TASK-201: Create dataset registry | Est: 1h
+  - Target: `3DVLMReasoning/src/dataset/registry.py`
+  - Functions: register_dataset decorator, get_dataset_adapter, list_datasets
+  - Acceptance:
+    - [ ] Registry pattern functional
+    - [ ] Factory function works
+
+- [ ] TASK-202: Implement ReplicaAdapter | Est: 2h
+  - Target: `3DVLMReasoning/src/dataset/replica_adapter.py`
+  - Acceptance:
+    - [ ] Implements DatasetAdapter ABC
+    - [ ] Registered via @register_dataset("replica")
+    - [ ] All Replica scenes accessible
+
+- [ ] TASK-203: Implement ScanNetAdapter | Est: 2h
+  - Target: `3DVLMReasoning/src/dataset/scannet_adapter.py`
+  - Acceptance:
+    - [ ] Implements DatasetAdapter ABC
+    - [ ] Registered via @register_dataset("scannet")
+    - [ ] ScanNet scene loading works
+
+- [ ] TASK-204: Add dataset configuration | Est: 1h
+  - Target: `3DVLMReasoning/src/config/datasets.yaml`
+  - Config: root paths, coordinate systems, frame strides
+  - Acceptance:
+    - [ ] YAML config loads correctly
+    - [ ] Environment variable overrides work
+
+### Query Scene Refactor
+
+- [ ] TASK-210: Refactor query_scene core | Est: 2h
+  - Target: `3DVLMReasoning/src/query_scene/core/`
+  - Files: query_types.py, hypotheses.py, results.py
+  - Acceptance:
+    - [ ] Core abstractions in dedicated subpackage
+    - [ ] Clean imports
+
+- [ ] TASK-211: Refactor query parsing | Est: 1h
+  - Target: `3DVLMReasoning/src/query_scene/parsing/`
+  - Files: parser.py, structures.py
+  - Acceptance:
+    - [ ] Parser in dedicated subpackage
+    - [ ] AST-like structures defined
+
+- [ ] TASK-212: Refactor keyframe retrieval | Est: 1h
+  - Target: `3DVLMReasoning/src/query_scene/retrieval/`
+  - Files: keyframe_selector.py, visibility_index.py, spatial_index.py
+  - Acceptance:
+    - [ ] Retrieval logic separated
+    - [ ] Clean interface
+
+### Agents Refactor
+
+- [ ] TASK-220: Refactor agents core | Est: 2h
+  - Target: `3DVLMReasoning/src/agents/core/`
+  - Files: agent_config.py, response_schema.py, task_types.py
+  - Acceptance:
+    - [ ] Core config in dedicated subpackage
+    - [ ] Type definitions clean
+
+- [ ] TASK-221: Create benchmark adapter base | Est: 1h
+  - Target: `3DVLMReasoning/src/agents/adapters/base.py`
+  - Class: BenchmarkAdapter ABC
+  - Acceptance:
+    - [ ] ABC defines benchmark interface
+    - [ ] Adapter pattern ready
+
+- [ ] TASK-222: Refactor agent runtime | Est: 1h
+  - Target: `3DVLMReasoning/src/agents/runtime/`
+  - Files: langchain_agent.py, deepagents_agent.py
+  - Acceptance:
+    - [ ] Runtime implementations separated
+    - [ ] Clean inheritance
+
+---
+
+## Phase 4: Multi-Dataset Support (Est: 8h)
+
+- [ ] TASK-300: Integrate adapters with pipeline | Est: 4h
+  - Target: `3DVLMReasoning/src/query_scene/query_pipeline.py`
+  - Acceptance:
+    - [ ] Pipeline accepts dataset adapter
+    - [ ] Coordinate transforms applied
+    - [ ] Scene loading uses adapters
+
+- [ ] TASK-301: Test Replica end-to-end | Est: 2h
+  - Test: Run full pipeline on Replica room0
+  - Acceptance:
+    - [ ] Pipeline completes without errors
+    - [ ] Results match pre-migration behavior
+
+- [ ] TASK-302: Test ScanNet end-to-end | Est: 2h
+  - Test: Run full pipeline on ScanNet scene
+  - Acceptance:
+    - [ ] Pipeline works with ScanNet data
+    - [ ] Coordinate differences handled
+
+---
+
+## Phase 5: Equivalence Testing Framework (Est: 10h)
+
+- [ ] TASK-400: Create ground truth generation script | Est: 2h
+  - Target: `3DVLMReasoning/scripts/generate_migration_test_data.py`
+  - Captures:
+    - Stage 1 keyframe selection for 50 queries
+    - Query parsing outputs for 100 queries
+    - Hypothesis generation for various query types
+  - Acceptance:
+    - [ ] Script generates reproducible ground truth
+
+- [ ] TASK-401: Generate ground truth data | Est: 1h
+  - Run: `python scripts/generate_migration_test_data.py`
+  - Output: `tests/migration/ground_truth/`
+  - Acceptance:
+    - [ ] Ground truth files created
+    - [ ] Data validated
+
+- [ ] TASK-410: Create keyframe equivalence tests | Est: 2h
+  - Target: `3DVLMReasoning/tests/migration/test_stage1_equivalence.py`
+  - Tests:
+    - Simple query keyframes (exact match)
+    - Spatial query keyframes (80% overlap)
+  - Acceptance:
+    - [ ] Tests cover major query types
+    - [ ] Tolerance levels appropriate
+
+- [ ] TASK-411: Create parsing equivalence tests | Est: 2h
+  - Target: `3DVLMReasoning/tests/migration/test_parsing_equivalence.py`
+  - Tests:
+    - HypothesisOutputV1 structure match
+    - Query type classification
+  - Acceptance:
+    - [ ] Parsing behavior preserved
+
+- [ ] TASK-412: Create integration equivalence tests | Est: 2h
+  - Target: `3DVLMReasoning/tests/migration/test_integration_equivalence.py`
+  - Tests:
+    - End-to-end pipeline results
+    - Tool outputs
+  - Acceptance:
+    - [ ] Integration tests pass
+
+- [ ] TASK-420: Run full equivalence suite | Est: 1h
+  - Run: `pytest tests/migration/ -v`
+  - Acceptance:
+    - [ ] >= 95% match rate
+    - [ ] All critical paths pass
+
+---
+
+## Phase 6: Integration Validation (Est: 4h)
+
+- [ ] TASK-500: Run migration scorecard | Est: 2h
+  - Target: `3DVLMReasoning/scripts/run_migration_scorecard.py`
+  - Outputs:
+    - Stage 1 retrieval recall@k
+    - Query parsing accuracy
+    - End-to-end success rate
+    - Performance metrics
+  - Acceptance:
+    - [ ] All metrics within tolerance
+
+- [ ] TASK-501: Generate final report | Est: 1h
+  - Output: `3DVLMReasoning/docs/migration_report.md`
+  - Contents:
+    - Before/after comparison
+    - Test results
+    - Performance benchmarks
+  - Acceptance:
+    - [ ] Report generated
+    - [ ] All sections complete
+
+- [ ] TASK-502: Update documentation | Est: 1h
   - Files:
-    - `conceptgraph/evaluation/scripts/run_scanrefer_stage1_only.py` (Stage 1 only baseline)
-    - `conceptgraph/evaluation/scripts/run_scanrefer_oneshot.py` (One-shot VLM baseline)
-    - `conceptgraph/evaluation/scripts/run_scanrefer_stage2_full.py` (Full Stage 2 agent)
-  - Tests: `conceptgraph/evaluation/scripts/tests/test_run_scanrefer_*.py` (65 tests passing)
-  - Depends: TASK-008, TASK-003, TASK-020
-  - Output: `results/experiments/scanrefer_*.json`
-  - Status: Complete with mock data support, 3D bounding box prediction, all three experimental conditions
+    - README.md
+    - CONTRIBUTING.md
+    - API documentation
+  - Acceptance:
+    - [ ] No conceptgraph references
+    - [ ] Import paths updated
+    - [ ] Examples work
 
 ---
 
-## Phase 5: Ablation Studies (Priority 2)
+## Success Criteria
 
-- [x] TASK-040: Ablation: No tool calls (one-shot) | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablations/run_oneshot_ablation.py`
-  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_oneshot_ablation.py` (44 tests passing)
-  - Status: Complete with OneshotAblationRunner, cross-benchmark support, academic alignment
-- [x] TASK-041: Ablation: + request_more_views only | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablations/run_views_only_ablation.py`
-  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_views_only_ablation.py` (54 tests passing)
-  - Status: Complete with ViewsOnlyAblationRunner, enables single evidence-seeking tool for isolated contribution analysis
-- [x] TASK-042: Ablation: + request_crops only | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablations/run_crops_only_ablation.py`
-  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_crops_only_ablation.py` (60 tests passing)
-  - Status: Complete with CropsOnlyAblationRunner, enables object-level cropping for fine-grained evidence acquisition
-- [x] TASK-043: Ablation: + hypothesis_repair only | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablations/run_hypothesis_repair_only_ablation.py`
-  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_hypothesis_repair_only_ablation.py` (67 tests passing)
-  - Status: Complete with HypothesisRepairOnlyAblationRunner, enables symbolic-to-visual repair for hypothesis switching
-- [x] TASK-044: Ablation: + uncertainty output | Priority: 2 | Est: 2h
-  - File: `conceptgraph/evaluation/ablations/run_uncertainty_ablation.py`
-  - Tests: `conceptgraph/evaluation/ablations/tests/test_run_uncertainty_ablation.py` (63 tests passing)
-  - Status: Complete with UncertaintyAblationRunner, tests evidence-grounded uncertainty claim by disabling uncertainty stopping
+### Functional
+- [ ] All 128+ existing tests pass
+- [ ] Equivalence tests >= 95% match rate
+- [ ] End-to-end works for Replica
+- [ ] End-to-end works for ScanNet
+- [ ] OpenEQA, SQA3D, ScanRefer benchmarks run
 
----
+### Code Quality
+- [ ] 100% black formatted
+- [ ] No conceptgraph imports remain
+- [ ] Type hints on all public APIs
+- [ ] Docstrings on all public functions
+- [ ] Zero ruff linting errors
 
-## Phase 6: Analysis & Academic Writing (Priority 3)
-
-- [x] TASK-050: Generate result tables (Table 1, Table 2) | Priority: 3 | Est: 2h
-  - File: `conceptgraph/evaluation/result_tables.py`
-  - Tests: `conceptgraph/evaluation/tests/test_result_tables.py` (38 tests passing)
-  - Status: Complete with mock data, LaTeX export, academic alignment
-- [x] TASK-051: Create visualization figures | Priority: 3 | Est: 4h
-  - File: `conceptgraph/evaluation/visualizations.py`
-  - Tests: `conceptgraph/evaluation/tests/test_visualizations.py` (47 tests passing)
-  - Status: Complete with mock data support, detection drop stress test, tool usage distribution, confidence calibration
-  - Output: `results/figures/*.pdf`
-
-- [x] TASK-052: Write experimental analysis section | Priority: 3 | Est: 8h
-  - File: `conceptgraph/evaluation/experimental_analysis.py`
-  - Tests: `conceptgraph/evaluation/tests/test_experimental_analysis.py` (66 tests passing)
-  - Output: `docs/paper/experimental_analysis.tex`
-  - Status: Complete with mock data support, LaTeX generation, all 4 academic claims validated
-- [x] TASK-053: Draft related work comparison | Priority: 3 | Est: 6h
-  - File: `conceptgraph/evaluation/related_work.py`
-  - Tests: `conceptgraph/evaluation/tests/test_related_work.py` (49 tests passing)
-  - Output: `docs/paper/related_work.tex`
-  - Status: Complete with method comparison tables, benchmark summaries, differentiation analysis
-- [x] TASK-054: Academic positioning document | Priority: 3 | Est: 4h
-  - File: `conceptgraph/evaluation/academic_positioning.py`
-  - Tests: `conceptgraph/evaluation/tests/test_academic_positioning.py` (61 tests passing)
-  - Output: `docs/paper/academic_positioning_cvpr.tex`, `docs/paper/academic_positioning_neurips.tex`
-  - Status: Complete with 4 research claims, competitive landscape, publication strategy, novelty gap analysis
-
----
-
-## Research Insights Queue
-
-> New insights discovered during implementation. Review and integrate.
-
-- [ ] INSIGHT-001: (Pending discovery via web research)
-
----
-
-## Completed Tasks Archive
-
-### 2026-03-20
-
-- [x] TASK-001: OpenEQA benchmark loader (26 tests)
-- [x] TASK-002: SQA3D benchmark loader (41 tests)
-- [x] TASK-010: Implement request_crops tool backend (32 tests)
-- [x] TASK-011: Implement switch_or_expand_hypothesis tool (41 tests)
-- [x] TASK-013: Implement uncertainty-aware stopping (tests in stage2_deep_agent tests)
-- [x] TASK-021: Implement metrics aggregation (56 tests)
-- [x] TASK-022: Create ablation configuration system (60 tests)
-- [x] TASK-023: Integrate with trace server for logging (33 tests)
-- [x] TASK-030: Run Stage 1 only baseline on OpenEQA (17 tests)
-- [x] TASK-031: Run one-shot VLM baseline on OpenEQA (21 tests)
-- [x] TASK-032: Run full Stage 2 agent on OpenEQA (33 tests)
-- [x] TASK-033: Run SQA3D experiments - all 3 conditions (67 tests)
-- [x] TASK-034: Run ScanRefer experiments - all 3 conditions (65 tests)
-- [x] TASK-040: Ablation: No tool calls (one-shot) (44 tests)
-- [x] TASK-041: Ablation: + request_more_views only (54 tests)
-- [x] TASK-042: Ablation: + request_crops only (60 tests)
-- [x] TASK-043: Ablation: + hypothesis_repair only (67 tests)
-- [x] TASK-044: Ablation: + uncertainty output (63 tests)
-- [x] TASK-050: Generate result tables (Table 1, Table 2) (38 tests)
-- [x] TASK-051: Create visualization figures (47 tests)
-- [x] TASK-052: Write experimental analysis section (66 tests)
+### Performance
+- [ ] Pipeline latency within 10% of baseline
+- [ ] Memory usage within 20% of baseline
 
 ---
 
 ## Metrics Dashboard
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| OpenEQA tests | 26 | 26 |
-| SQA3D tests | 41 | 41 |
-| ScanRefer tests | 65 | 65 |
-| Batch Eval tests | 33 | 33 |
-| Ablation Config tests | 60 | 60 |
-| Trace Integration tests | 33 | 33 |
-| Result Tables tests | 38 | 38 |
-| Experimental Analysis tests | 66 | 66 |
-| Total test coverage | ~72% | 80% |
-| Benchmark loaders | 4/4 | 4/4 |
+| Phase | Tasks | Completed |
+|-------|-------|-----------|
+| Phase 1: Cleanup | 3 | 0 |
+| Phase 2: Migration | 8 | 0 |
+| Phase 3: Architecture | 10 | 0 |
+| Phase 4: Multi-dataset | 3 | 0 |
+| Phase 5: Testing | 6 | 0 |
+| Phase 6: Validation | 3 | 0 |
+| **Total** | **33** | **0** |
 
 ---
 
-*Last updated: 2026-03-20 05:38*
+*Generated: 2026-03-22*

@@ -230,4 +230,43 @@ conceptgraph/
 
 ---
 
-*Last updated: 2026-03-20*
+## Migration to 3DVLMReasoning
+
+The `query_scene`, `agents`, and `benchmarks` modules have been extracted into a standalone repository for independent development and publication.
+
+### Repository Structure
+
+The new repository uses standard Python src layout:
+
+```
+/Users/bytedance/project/3DVLMReasoning/
+├── src/
+│   ├── query_scene/     # Stage 1: Keyframe retrieval
+│   ├── agents/          # Stage 2: VLM agents
+│   ├── benchmarks/      # OpenEQA, SQA3D, ScanRefer
+│   └── utils/           # LLM client utilities
+├── pyproject.toml       # Build config with hatchling
+├── TASKS.md             # Synced task tracking
+└── .venv/               # Virtual environment
+```
+
+### Import Path Changes
+
+| Before | After |
+|--------|-------|
+| `from conceptgraph.query_scene import ...` | `from query_scene import ...` |
+| `from conceptgraph.agents import ...` | `from agents import ...` |
+| `from conceptgraph.benchmarks import ...` | `from benchmarks import ...` |
+
+### Testing the Migration
+
+```bash
+cd /Users/bytedance/project/3DVLMReasoning
+source .venv/bin/activate
+pytest src/benchmarks/tests/ -v  # 108 tests
+pytest src/query_scene/tests/test_hypothesis_output_schema.py src/query_scene/tests/test_query_parser_hypothesis.py -v  # 20 tests
+```
+
+---
+
+*Last updated: 2026-03-22*
